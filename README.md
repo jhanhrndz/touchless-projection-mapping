@@ -17,8 +17,8 @@ projector rectangle, 1:1 — a polygon you draw at (x, y) lands at (x, y) on the
 wall. You line it up by looking at the wall, which takes about thirty seconds
 and is the part you'd have to do anyway.
 
-Build the Smart Lamp first: a projector and a $15 smart switch is the whole bill
-of materials.
+Build the Smart Lamp first: a projector and a
+[$15 smart switch](https://amzn.to/46lnDKR) is the whole bill of materials.
 
 > **Working on this with an AI agent?** Point it at
 > [`AGENTS.md`](AGENTS.md) — setup on an unfamiliar machine, the invariants
@@ -102,9 +102,10 @@ frame — set them where you want them by aiming the projector.
 - A laptop. The server is plain Python + FastAPI; nothing here is OS-specific.
 
 **Smart Lamp**
-- A **TP-Link Kasa smart switch** on the same LAN, wired to the lamp — that's
-  what the demo actually uses. A Kasa smart plug or smart bulb drops in
-  unchanged; the driver only ever calls on/off.
+- A **[TP-Link Kasa smart switch](https://amzn.to/46lnDKR)** (affiliate link)
+  on the same LAN, wired to the lamp — that's what the demo actually uses. A
+  Kasa smart plug or smart bulb drops in unchanged; the driver only ever
+  calls on/off.
 - Any other brand works at the cost of a ~40-line driver — see
   [Adding your own device](#adding-your-own-device).
 
@@ -119,6 +120,8 @@ frame — set them where you want them by aiming the projector.
 - **The Pi-side service is not in this repo** — it's ~100 lines and it's
   specific to your motor. [`docs/BOOK_PUSHER.md`](docs/BOOK_PUSHER.md) specifies
   the three-command UDP protocol so you can write it against your own hardware.
+
+*As an Amazon Associate I earn from qualifying purchases.*
 
 ---
 
