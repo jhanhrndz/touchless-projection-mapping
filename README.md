@@ -114,7 +114,9 @@ frame — set them where you want them by aiming the projector.
 > the projection does. Costs an embarrassing amount of debugging to rediscover.
 
 **Bookshelf**
-- A Raspberry Pi on the LAN.
+- A Raspberry Pi on the LAN. An ESP32 works just as well — the service is
+  three UDP commands, well within reach of either — I just had a Pi lying
+  around.
 - A stepper or linear actuator behind the shelf that can push one book forward
   and pull back. Mine is a 3D-printed rod on a lead screw.
 - **The Pi-side service is not in this repo** — it's ~100 lines and it's
