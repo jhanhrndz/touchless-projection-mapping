@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Interactive Projection</title>
+<style>
+  /* ---------- base ---------- */
+  html, body {
+    margin: 0; padding: 0;
+    background: black;
+    overflow: hidden;
+    height: 100vh;
+    color: white;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  /* Cursor outside polygons. Default is the regular pointer; ?cursor=crosshair
+     and ?cursor=none are toggles. Polygons always hide the cursor (see below). */
+  body.cursor-default   { cursor: default; }
+  body.cursor-crosshair { cursor: crosshair; }
+  body.cursor-none      { cursor: none; }
+  svg#overlay { display: block; width: 100vw; height: 100vh; }
+
+  /* All polygons: hide the OS cursor while hovering — the animation IS the pointer feedback */
+  polygon.obj { pointer-events: all; cursor: none; }
+
+  /* While a tracking polygon is bound to the mouse, force `grabbing` (closed
+     hand) everywhere on the page so the user sees they're actively dragging
+     the carriage. Has to be body-level + !important because the polygon
+     itself goes invisible (opacity:0 — see .paddle-bound rule below) and
+     the cursor would otherwise revert to the base polygon.obj rule or the
+     OS default depending on which element the mouse lands on per frame. */
+  body.cursor-grabbing, body.cursor-grabbing * { cursor: grabbing !important; }
+
+  /* Hovering an UNBOUND tracking polygon: open-hand grab affordance so the
+     user knows to click to take control. Overrides the base polygon.obj
+     `cursor: none` rule. paddle-bound polygons are handled by the body-level
+     grabbing rule above. */
+  polygon.obj.tracking:not(.paddle-bound) { cursor: grab !important; }
+
+  /* Flame-carry interaction (candle scene). The flame source + candle targets
+     show an open-hand `grab` affordance on hover ONLY when NOT carrying the
+     flame. The `body:not(.cursor-grabbing)` guard is essential: this selector
+     is more specific than the body-level `cursor-grabbing *` rule, so without
+     it, hovering a candle WHILE carrying would wrongly reopen the hand. Guarded,
+     the closed `grabbing` hand stays put over candles until you click to drop. */
+  body:not(.cursor-grabbing) polygon.obj.flame-grabbable:not(.paddle-bound):hover { cursor: grab !important; }
+
+  /* The 🔥 that rides just under the cursor while a flame is being carried.
+     Centered horizontally on the cursor, nudged below the tip. */
+  #flame-cursor {
+    position: fixed;
+    left: 0; top: 0;
+    transform: translate(-50%, 0);
+    font-size: 30px;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 200;
+    display: none;
+    filter: drop-shadow(0 0 6px rgba(255, 140, 0, 0.9));
+    will-change: left, top;
+  }
+
+  /* While bound, fade the outline / hover effect away. The physical popcorn
+     IS the affordance now — the projected outline would just double-image
+     on top of the real object. Use opacity:0 rather than tugging at stroke
+     and fill individually — opacity wins as a single property regardless of
+     which fx-* rule colors the polygon, and the duplicated class bumps
+     specificity above the 2-class hover variants without source-order
+     ambiguity. Pointer-events stays on so click-to-unbind still fires. */
+  polygon.obj.paddle-bound.paddle-bound,
+  polygon.obj.paddle-bound.paddle-bound:hover {
+    opacity: 0 !important;
+    filter: none !important;
+    animation: none !important;
+    pointer-events: all !important;
+  }
+
+  /* Occluder: solid black, NO border, NO hover effect, NO label, cursor hidden.
+     Wins over every fx-* hover rule below because it's more-specific (.occluder
+     class) and uses !important on the visual properties to defeat any current
+     or future fx- rule that would try to light it up. */
+  polygon.obj.occluder,
+  polygon.obj.occluder:hover {
+    fill: #000 !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+    filter: none !important;
+    animation: none !important;
+    cursor: none;
+  }
+
+  text.label {
+    fill: white;
+    font-size: 14px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 160ms;
+  }
+  polygon.obj:hover + text.label { opacity: 0.85; }
+  /* No label for occluders — there's nothing to disambiguate and white text
+     over a black hole defeats the "no UI here" intent. */
+  polygon.obj.occluder + text.label { display: none; }
+
+  #status {
+    position: fixed; left: 8px; top: 8px;
+    color: #444; font-size: 11px;
+    pointer-events: none;
+  }
+
+  /* ---------- per-object animation params ----------
+     Each polygon may override these via inline `style="--obj-color: ..."`
+     written by JS from objects.json's `animation` field. Defaults below
+     match each effect's original color so unparameterized polygons render
+     identically to the pre-tuner version. */
+  polygon.obj {
+    --obj-intensity: 1;
+    --obj-speed: 1;
+  }
+
+  /* Common idle: faint white outline, transparent fill. Effect-specific
+     hover rules below win on hover.
+
+     The `--ap-*` CSS variables let the JS write per-object appearance
+     overrides without using inline `style="fill: ..."` — inline styles
+     win over `:hover` selectors and would defeat the fx-* hover effects
+     (the "fill bug" originally hit while tuning bookshelf objects). With vars
+     here, selectors compete normally: idle uses the var, hover sets fill
+     explicitly and wins because `:hover` is more specific than the base.
+
+     IMPORTANT: include both `*-opacity` props in the transition. Hover effects
+     set `fill-opacity` / `stroke-opacity` (e.g. 0.18 for fx-glow). If those
+     aren't transitioned, hover-out snaps the opacity to the default of 1.0
+     for one frame BEFORE the fill color begins fading — visible as a brief
+     yellow flash. Listing them here keeps everything fading together. */
+  polygon.obj {
+    fill: var(--ap-fill, rgba(255, 255, 255, 0));
+    stroke: var(--ap-stroke, rgba(255, 255, 255, 0.10));
+    stroke-opacity: var(--ap-stroke-opacity, 1);
+    stroke-width: var(--ap-stroke-width, 1);
+    stroke-dasharray: var(--ap-stroke-dash, none);
+    transition:
+      fill          180ms ease-out,
+      fill-opacity  180ms ease-out,
+      stroke        180ms ease-out,
+      stroke-opacity 180ms ease-out,
+      stroke-width  180ms ease-out,
+      filter        180ms ease-out;
+  }
+  polygon.obj.fx-ember { stroke-width: 0; }   /* ember idle is fully invisible */
+
+  /* ---------- effect: glow — soft outline halo, warm tone (default) ---------- */
+  polygon.obj.fx-glow:hover, polygon.obj.fx-glow.hovered {
+    fill: var(--obj-color, #ffc864);
+    fill-opacity: var(--obj-fill-opacity, calc(0.18 * var(--obj-intensity)));
+    stroke: var(--obj-color, #ffc864);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 3;
+    filter: drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ffb450))
+            drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff8c28));
+  }
+
+  /* ---------- effect: pulse — sonar-style ring expanding outward ---------- */
+  polygon.obj.fx-pulse:hover, polygon.obj.fx-pulse.hovered {
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 calc(8px * var(--obj-intensity)) var(--obj-color, #78dcff));
+  }
+  polygon.pulse-ring {
+    pointer-events: none;
+    fill: none;
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: 0;
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes pulse-ring {
+    0%   { stroke-opacity: 0.85; transform: scale(1.0); }
+    100% { stroke-opacity: 0;    transform: scale(1.35); }
+  }
+  polygon.pulse-ring.active {
+    animation: pulse-ring calc(1.4s / var(--obj-speed, 1)) ease-out infinite;
+  }
+
+  /* ---------- effect: aurora — multi-color shimmer along the edge ----------
+     Color override doesn't apply (the gradient is the whole point). Speed and
+     intensity still work via the gradient-stop animation duration. */
+  polygon.obj.fx-aurora:hover, polygon.obj.fx-aurora.hovered {
+    stroke: url(#aurora-gradient);
+    stroke-width: 4;
+    fill: rgba(120, 80, 200, 0.10);
+    fill-opacity: var(--obj-fill-opacity, calc(0.10 * var(--obj-intensity)));
+    filter: drop-shadow(0 0 calc(10px * var(--obj-intensity)) rgba(160,80,255,0.55))
+            drop-shadow(0 0 calc(22px * var(--obj-intensity)) rgba(80,200,255,0.35));
+  }
+  @keyframes aurora-shift {
+    0%   { stop-color: #ff66cc; }
+    33%  { stop-color: #66ccff; }
+    66%  { stop-color: #aaff66; }
+    100% { stop-color: #ff66cc; }
+  }
+  /* Aurora gradient stops always animate (the gradient is shared across all
+     fx-aurora polygons). Speed override doesn't apply per-stop here — global. */
+  #aurora-stop-1 { animation: aurora-shift 6s linear infinite; }
+  #aurora-stop-2 { animation: aurora-shift 6s linear infinite; animation-delay: -2s; }
+  #aurora-stop-3 { animation: aurora-shift 6s linear infinite; animation-delay: -4s; }
+
+  /* ---------- effect: bloom — inner radial fill that breathes ----------
+     Uses the radial gradient in <defs>; color override doesn't apply. */
+  polygon.obj.fx-bloom:hover, polygon.obj.fx-bloom.hovered {
+    fill: url(#bloom-gradient);
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-opacity: calc(0.6 * var(--obj-intensity));
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 calc(14px * var(--obj-intensity)) rgba(255,255,200,0.55));
+    animation: bloom-breath calc(2.4s / var(--obj-speed, 1)) ease-in-out infinite;
+  }
+  @keyframes bloom-breath {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255,255,200,0.35)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255,255,200,0.85)); }
+  }
+
+  /* ---------- effect: ants — marching dashed border ---------- */
+  polygon.obj.fx-ants:hover, polygon.obj.fx-ants.hovered {
+    fill: rgba(255, 255, 255, 0.05);
+    fill-opacity: var(--obj-fill-opacity, calc(0.05 * var(--obj-intensity)));
+    stroke: var(--obj-color, white);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2;
+    stroke-dasharray: 8 6;
+    animation: ants calc(0.8s / var(--obj-speed, 1)) linear infinite;
+  }
+  @keyframes ants {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -28; }
+  }
+
+  /* ---------- effect: ember — edge-only halo, NO fill change (most subtle) ---------- */
+  polygon.obj.fx-ember:hover, polygon.obj.fx-ember.hovered {
+    stroke: var(--obj-color, #ff8c3c);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 2;
+    filter:
+      drop-shadow(0 0 calc(4px  * var(--obj-intensity)) var(--obj-color, #ffa050))
+      drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ff7828))
+      drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff5014));
+  }
+
+  /* ---------- effect picker (only visible with ?picker=1) ---------- */
+  #picker {
+    position: fixed; right: 8px; bottom: 8px;
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    pointer-events: auto;
+    display: none;
+  }
+  body[data-picker="1"] #picker { display: block; }
+  #picker a {
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    margin: 0 4px;
+    cursor: pointer;
+  }
+  #picker a.current { color: rgba(255,200,100,0.95); }
+  #picker a:hover { color: white; }
+
+  /* ---------- right-click context menu ---------- */
+  #ctx {
+    position: fixed;
+    background: rgba(20, 20, 20, 0.96);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    font-size: 13px;
+    color: white;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    display: none;
+    z-index: 10;
+  }
+  #ctx .item {
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background 80ms;
+  }
+  #ctx .item:hover { background: rgba(255,200,100,0.18); }
+  #ctx .empty { padding: 6px 14px; color: rgba(255,255,255,0.4); font-style: italic; }
+</style>
+</head>
+<body>
+<div id="status">connecting…</div>
+<svg id="overlay" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <!-- aurora effect: animated multi-stop gradient along the stroke -->
+    <linearGradient id="aurora-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop id="aurora-stop-1" offset="0%"   stop-color="#ff66cc" />
+      <stop id="aurora-stop-2" offset="50%"  stop-color="#66ccff" />
+      <stop id="aurora-stop-3" offset="100%" stop-color="#aaff66" />
+    </linearGradient>
+    <!-- bloom effect: radial gradient anchored to the polygon's bbox -->
+    <radialGradient id="bloom-gradient" cx="50%" cy="50%" r="60%">
+      <stop offset="0%"   stop-color="rgba(255,250,200,0.55)" />
+      <stop offset="60%"  stop-color="rgba(255,200,100,0.18)" />
+      <stop offset="100%" stop-color="rgba(255,150, 50,0.0)" />
+    </radialGradient>
+  </defs>
+</svg>
+<div id="ctx"></div>
+<div id="flame-cursor">🔥</div>
+<div id="picker">
+  <div>effect:
+    <a data-fx="glow">glow</a>
+    <a data-fx="pulse">pulse</a>
+    <a data-fx="aurora">aurora</a>
+    <a data-fx="bloom">bloom</a>
+    <a data-fx="ants">ants</a>
+    <a data-fx="ember">ember</a>
+  </div>
+  <div>cursor:
+    <a data-cursor="default">default</a>
+    <a data-cursor="crosshair">crosshair</a>
+    <a data-cursor="none">none</a>
+  </div>
+  <div>fire-carry:
+    <a data-flame="1">on</a>
+    <a data-flame="0">off</a>
+  </div>
+</div>
+<script>
+const EFFECTS = ['glow', 'pulse', 'aurora', 'bloom', 'ants', 'ember'];
+const CURSORS = ['default', 'crosshair', 'none'];
+const params = new URLSearchParams(location.search);
+const effect = EFFECTS.includes(params.get('effect')) ? params.get('effect') : 'glow';
+const cursor = CURSORS.includes(params.get('cursor')) ? params.get('cursor') : 'default';
+const showPicker = params.get('picker') === '1';
+// Safety flag for automation / debugging: ?mock_clicks=1 suppresses every
+// outbound WebSocket message so visuals fire (animations, sounds) but no
+// device is dispatched. Off by default — regular wall usage is untouched.
+const mockClicks = params.get('mock_clicks') === '1';
+// Flame-CARRY mechanic: click a flame_source object to pick up a 🔥, carry it
+// to a candle, click to "place" + light. OFF by default so the base scene
+// (click a device to toggle it) is untouched — no grab cursors, no pickup.
+// Source of truth is the `scene.flame_carry` flag in devices.yaml, fetched
+// from /api/scene in loadObjects(). A ?flame=1 / ?flame=0 URL param, if
+// present, overrides the YAML for quick testing.
+let flameMode = params.get('flame') === '1';
+const flameParamPresent = params.has('flame');
+
+document.body.classList.add('fx-' + effect);
+document.body.classList.add('cursor-' + cursor);
+if (showPicker) document.body.dataset.picker = '1';
+
+// Picker links: preserve other params, swap the chosen dimension.
+for (const a of document.querySelectorAll('#picker a')) {
+  const next = new URLSearchParams(location.search);
+  if (a.dataset.fx) {
+    next.set('effect', a.dataset.fx);
+    if (a.dataset.fx === effect) a.classList.add('current');
+  } else if (a.dataset.cursor) {
+    next.set('cursor', a.dataset.cursor);
+    if (a.dataset.cursor === cursor) a.classList.add('current');
+  } else if (a.dataset.flame != null) {
+    next.set('flame', a.dataset.flame);
+    if (a.dataset.flame === (flameMode ? '1' : '0')) a.classList.add('current');
+  }
+  a.href = '?' + next.toString();
+}
+
+const svg = document.getElementById('overlay');
+const status = document.getElementById('status');
+const ctx = document.getElementById('ctx');
+let ws = null;
+// Design space = the projector rectangle (--projector-size), fetched from
+// /api/editor/scene in loadObjects() — the same source /editor uses, so the
+// two pages always agree. Window size is only the fallback if the fetch fails.
+let projectorW = window.innerWidth;
+let projectorH = window.innerHeight;
+let pendingMenuFor = null;
+
+// ----- pointer-tracking (single bound polygon at a time) -----
+// When set, holds { poly, obj, homeCx, halfW, vxRing }. While bound, the
+// polygon's `transform="translate(dx 0)"` follows the mouse X and the 60Hz
+// publisher below POSTs its current center X to /api/paddle/push. Mirrors
+// brick_breaker's paddle bind UX so the same downstream stepper bridge
+// (which subscribes to /ws/paddle) works unchanged.
+let trackedBound = null;
+let mouseClientX = 0;     // last mouse X in DESIGN px (converted via toDesignX)
+const VX_WINDOW_MS = 100;
+// Physical rail limits in design pixels. Populated at load from
+// /api/paddle/config (derived from stepper calibration); null entries mean
+// "no clamp" — same UX as before the calibration was wired up.
+let paddleLimits = { x_px_min: null, x_px_max: null };
+
+// Pure-visual alignment for tracked polygons. Adjusts WHERE the polygon is
+// DRAWN (drawn_x = mouse_x * x_scale + x_offset). Does NOT affect what we
+// publish to /api/paddle/push — the bridge keeps getting the raw mouse X
+// so the carriage's physical position is unchanged. Tuned via /align.
+let projectionAlign = { x_offset: 0.0, x_scale: 1.0 };
+let projectionAlignVersion = -1;
+
+(async () => {
+  try {
+    const r = await fetch('/api/paddle/config');
+    if (r.ok) paddleLimits = await r.json();
+  } catch (e) { /* runtime works without the clamp */ }
+  try {
+    const r = await fetch('/api/projection_align');
+    if (r.ok) projectionAlign = await r.json();
+  } catch (e) { /* defaults to identity */ }
+})();
+
+// Poll for live alignment edits from /align so adjustments preview on this
+// page in real time without a save. Light poll — alignment is a manual,
+// human-paced tuning loop, no need for WS.
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/projection_align/draft', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (typeof d.version === 'number' && d.version !== projectionAlignVersion) {
+      projectionAlignVersion = d.version;
+      projectionAlign = { x_offset: d.x_offset, x_scale: d.x_scale };
+      applyTrackingTransform();   // re-render the bound polygon immediately
+    }
+  } catch (e) { /* ignore — server might be reloading */ }
+}, 250);
+
+function clampToRail(x) {
+  if (paddleLimits.x_px_min != null && x < paddleLimits.x_px_min) return paddleLimits.x_px_min;
+  if (paddleLimits.x_px_max != null && x > paddleLimits.x_px_max) return paddleLimits.x_px_max;
+  return x;
+}
+
+// The viewBox is pinned to design space, NOT window.innerWidth/Height. The
+// scene letterboxes into the window (preserveAspectRatio="xMidYMid meet",
+// same as /editor's canvas), so a smaller window shows the whole scene
+// scaled down instead of cropping everything below the fold into an
+// unexplained black page. Fullscreen on the projector at native resolution
+// — the real use — the window aspect equals the design aspect and this
+// renders exactly 1:1 as before.
+function setViewbox() {
+  svg.setAttribute('viewBox', `0 0 ${projectorW} ${projectorH}`);
+}
+setViewbox();
+
+// Screen px → design px under the letterboxed uniform scale. Identity when
+// the window matches the projector size.
+function designScale() {
+  return Math.min(window.innerWidth / projectorW, window.innerHeight / projectorH);
+}
+function toDesignX(clientX) {
+  const s = designScale();
+  if (!s || !isFinite(s)) return clientX;
+  const offsetX = (window.innerWidth - projectorW * s) / 2;
+  return (clientX - offsetX) / s;
+}
+
+function connectWS() {
+  // wss: when the page itself is https — a hardcoded ws: is blocked as mixed
+  // content the moment this sits behind any TLS proxy.
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${wsProto}//${location.host}/ws`);
+  ws.onopen = () => { status.textContent = `[${effect}] connected`; };
+  ws.onclose = () => { status.textContent = `[${effect}] reconnecting…`; setTimeout(connectWS, 500); };
+  ws.onerror = () => { /* close will follow */ };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'menu' && msg.id === pendingMenuFor) {
+      renderContextMenu(msg.id, msg.items, lastCtxX, lastCtxY);
+    } else if (msg.type === 'error') {
+      console.warn('ws error:', msg.error);
+    }
+  };
+}
+connectWS();
+
+function send(payload) {
+  // mock_clicks: log + skip. Every outbound WS message goes through this
+  // function (hover, click, menu, menu_action) so this is the single chokepoint
+  // for "don't dispatch to the server / devices".
+  if (mockClicks) {
+    console.log('[mock_clicks] suppressed', payload);
+    return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+}
+
+if (mockClicks) {
+  // Visible affordance so anyone landing on this URL knows clicks are no-ops.
+  // Top-right, orange so it reads as "warning state" without screaming.
+  const badge = document.createElement('div');
+  badge.id = 'mock-clicks-badge';
+  badge.textContent = '🔒 mock_clicks — device dispatches suppressed';
+  badge.style.cssText = [
+    'position:fixed', 'right:8px', 'top:8px',
+    'color:#ffaa55',
+    'border:1px solid rgba(255,170,85,0.6)',
+    'background:rgba(20,20,20,0.85)',
+    'padding:4px 10px', 'border-radius:4px',
+    'font-size:11px', 'letter-spacing:0.5px',
+    'pointer-events:none', 'z-index:100',
+  ].join(';');
+  document.body.appendChild(badge);
+}
+
+let lastCtxX = 0, lastCtxY = 0;
+
+function hideContextMenu() {
+  ctx.style.display = 'none';
+  ctx.innerHTML = '';
+  pendingMenuFor = null;
+}
+
+function renderContextMenu(targetId, items, x, y) {
+  ctx.innerHTML = '';
+  if (!items || items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '(no actions)';
+    ctx.appendChild(empty);
+  } else {
+    for (const item of items) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.textContent = item.label;
+      el.addEventListener('click', () => {
+        send({type: 'menu_action', id: targetId, action_id: item.action_id});
+        hideContextMenu();
+      });
+      ctx.appendChild(el);
+    }
+  }
+  // Clamp to viewport so the menu doesn't get cut off near the right/bottom
+  // edge. The menu is a position:fixed DOM element, so the clamp is in window
+  // pixels — projectorW/projectorH are design space and only match the window
+  // when fullscreen at native resolution.
+  const margin = 8;
+  ctx.style.display = 'block';
+  const w = ctx.offsetWidth, h = ctx.offsetHeight;
+  ctx.style.left = Math.min(x, window.innerWidth - w - margin) + 'px';
+  ctx.style.top  = Math.min(y, window.innerHeight - h - margin) + 'px';
+}
+window.addEventListener('click', (ev) => {
+  if (ctx.style.display === 'block' && !ctx.contains(ev.target)) hideContextMenu();
+});
+
+// Convert "#rrggbb" + opacity 0..1 → "rgba(r, g, b, op)". Used by the
+// appearance renderer below so per-object idle colors compose with the
+// existing fx-* hover rules (which override `fill`/`stroke` on hover).
+function rgbaFromHex(hex, opacity) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+// Compute the (x, y, w, h) bounding box of a polygon — used to position
+// SVG <image> overlays that sit underneath the polygon clip-path.
+function polygonBbox(points) {
+  const xs = points.map(p => p[0]);
+  const ys = points.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+// Emit a <clipPath> + <image> pair so the image fills the polygon's bounding
+// box (per `fit`) and is clipped to the polygon shape. Pointer events on the
+// image are disabled — hover/click still goes to the polygon above it.
+//
+// Image source `data/objects/<name>` is served by /data/objects/<name> on
+// the server (sandboxed read of the local data/objects directory).
+function renderObjectImage(svg, ns, obj, image) {
+  const bb = polygonBbox(obj.polygon);
+  const clipId = `appearance-clip-${obj.id}`;
+  const clipPath = document.createElementNS(ns, 'clipPath');
+  clipPath.setAttribute('id', clipId);
+  const clipPoly = document.createElementNS(ns, 'polygon');
+  clipPoly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+  clipPath.appendChild(clipPoly);
+  svg.appendChild(clipPath);
+
+  const img = document.createElementNS(ns, 'image');
+  // image.src is "data/objects/<file>"; serve via the sandboxed /data route.
+  img.setAttribute('href', '/' + image.src);
+  img.setAttribute('x', bb.x);
+  img.setAttribute('y', bb.y);
+  img.setAttribute('width', bb.w);
+  img.setAttribute('height', bb.h);
+  img.setAttribute('preserveAspectRatio', FIT_PRESERVE[image.fit] || 'xMidYMid slice');
+  img.setAttribute('clip-path', `url(#${clipId})`);
+  img.setAttribute('pointer-events', 'none');
+  if (typeof image.opacity === 'number') img.setAttribute('opacity', image.opacity);
+  svg.appendChild(img);
+}
+
+// stroke-dasharray patterns for each `appearance.outline.dash` enum value.
+// "solid" maps to `none` so SVG renders an unbroken stroke.
+const DASH_PATTERNS = { solid: 'none', dashed: '8 6', dotted: '2 4' };
+
+// SVG preserveAspectRatio for each `appearance.image.fit` enum value.
+const FIT_PRESERVE = { cover: 'xMidYMid slice', contain: 'xMidYMid meet', stretch: 'none' };
+
+// ----- per-object hover sounds -----
+// One HTMLAudioElement per object id, cached so we don't re-download or
+// re-decode on every hover. Restarted from 0 on each mouseenter so rapid
+// re-hovers retrigger cleanly.
+//
+// Autoplay note: browsers block play() until the document has had a user
+// gesture (click / keydown / touchstart / pointerdown — `mouseenter` does
+// NOT count). The first hover on a fresh page load may fail silently. Any
+// click on the page (or the inspector's Preview button) unlocks audio for
+// the rest of the session. play() rejections go to console.warn so they
+// show up in DevTools rather than being a black hole.
+const audioCache = new Map();   // object_id → HTMLAudioElement
+
+// ----- per-object click animations -----
+// On click, overlay a quick generative animation on top of the polygon.
+// Currently supports `loading_bar`; the dispatch is keyed off `click.effect`
+// so adding "ripple" / "flash" later is just a new case in the switch.
+//
+// The overlay is appended to the same SVG as the polygons and auto-removes
+// after `duration_ms`. pointer-events: none so it doesn't intercept further
+// clicks while playing.
+function playClickAnimation(svgEl, ns, obj, click) {
+  if (!click || !click.effect) return;
+  if (click.effect === 'loading_bar') {
+    playLoadingBar(svgEl, ns, obj, click);
+  }
+}
+
+function playLoadingBar(svgEl, ns, obj, click) {
+  const color = click.color || '#ffffff';
+  const duration = typeof click.duration_ms === 'number' ? click.duration_ms : 1500;
+  // bbox-relative geometry. x/y are the bar's CENTER as a fraction of the
+  // polygon's bbox (0.5 = centered). width/height are fractions of the bbox.
+  // Defaults preserve the original look: 85% width, ~18% height capped at
+  // 22px to keep tall narrow polygons from getting a chunky bar. Explicit
+  // `height` overrides the cap so the user can tune it without surprise.
+  const xs = obj.polygon.map(p => p[0]);
+  const ys = obj.polygon.map(p => p[1]);
+  const bx = Math.min(...xs), by = Math.min(...ys);
+  const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
+  const xFrac = typeof click.x === 'number' ? click.x : 0.5;
+  const yFrac = typeof click.y === 'number' ? click.y : 0.5;
+  const wFrac = typeof click.width === 'number' ? click.width : 0.85;
+  const barW = bw * wFrac;
+  const barH = typeof click.height === 'number'
+    ? bh * click.height
+    : Math.min(bh * 0.18, 22);
+  const cx = bx + bw * xFrac;
+  const cy = by + bh * yFrac;
+  const barX = cx - barW / 2;
+  const barY = cy - barH / 2;
+
+  const g = document.createElementNS(ns, 'g');
+  g.setAttribute('pointer-events', 'none');
+  g.setAttribute('class', 'click-anim loading-bar');
+
+  // Outer border — same color as fill but stroke-only so it reads as a
+  // container while empty. stroke-width 1.5 looks crisp at the projector's
+  // resolution.
+  const outer = document.createElementNS(ns, 'rect');
+  outer.setAttribute('x', barX); outer.setAttribute('y', barY);
+  outer.setAttribute('width', barW); outer.setAttribute('height', barH);
+  outer.setAttribute('fill', 'none');
+  outer.setAttribute('stroke', color);
+  outer.setAttribute('stroke-width', 1.5);
+  g.appendChild(outer);
+
+  // Inner fill — width animates from 0 to barW over `duration` ms via rAF.
+  const inner = document.createElementNS(ns, 'rect');
+  inner.setAttribute('x', barX); inner.setAttribute('y', barY);
+  inner.setAttribute('width', 0); inner.setAttribute('height', barH);
+  inner.setAttribute('fill', color);
+  g.appendChild(inner);
+
+  svgEl.appendChild(g);
+
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    inner.setAttribute('width', barW * t);
+    if (t < 1) requestAnimationFrame(step);
+    else setTimeout(() => g.remove(), 200);   // short hold-and-fade
+  }
+  requestAnimationFrame(step);
+}
+
+function playObjectSound(objId, sound) {
+  if (!sound || !sound.src) return;
+  let el = audioCache.get(objId);
+  if (!el || el.dataset.src !== sound.src) {
+    el = new Audio('/' + sound.src);
+    el.dataset.src = sound.src;
+    el.preload = 'auto';
+    audioCache.set(objId, el);
+  }
+  el.volume = typeof sound.gain === 'number' ? sound.gain : 1;
+  el.currentTime = 0;
+  const promise = el.play();
+  if (promise && typeof promise.catch === 'function') {
+    promise.catch(err => console.warn('[sound]', err.name, err.message, sound.src));
+  }
+}
+
+// ----- pointer tracking helpers -----
+//
+// A polygon flagged with obj.tracking.binding === "click_to_bind" follows the
+// mouse X while bound. The polygon's original drawn position IS its home
+// position — on unbind we just remove the transform and it snaps back.
+
+function bindTracking(poly, obj, clickX) {
+  if (trackedBound) unbindTracking();
+  const bb = polygonBbox(obj.polygon);
+  // Capture the offset from the click point to the polygon's CURRENT visible
+  // center (post-transform, screen-space). This is the "grab point" — the
+  // polygon's center should always sit `grabOffset` pixels left of the mouse
+  // for the rest of the bind. Without this, clicking the left edge would
+  // snap the polygon's center under the mouse, jerking the carriage on
+  // every bind even when the user didn't intend to move it.
+  // getBoundingClientRect reflects post-transform geometry, so we don't have
+  // to parse the polygon's `transform` attribute manually. Both it and clickX
+  // are screen px; all the tracking math below runs in design px.
+  const rect = poly.getBoundingClientRect();
+  const currentCenterX = toDesignX(rect.left + rect.width / 2);
+  const grabOffset = (clickX != null ? toDesignX(clickX) : currentCenterX) - currentCenterX;
+  trackedBound = {
+    poly,
+    obj,
+    homeCx: bb.x + bb.w / 2,
+    halfW: bb.w / 2,
+    bboxW: bb.w,
+    grabOffset,
+    vxRing: [],
+  };
+  // Seed mouseClientX from the click — otherwise the first transform call
+  // below uses whatever stale (or zero) value the last mousemove left. The
+  // polygon would then visibly jump to (stale - grabOffset) instead of
+  // staying put under the cursor for one frame.
+  if (clickX != null) mouseClientX = toDesignX(clickX);
+  document.body.classList.add('cursor-grabbing');
+  poly.classList.add('paddle-bound');
+  applyTrackingTransform();
+}
+
+function unbindTracking() {
+  if (!trackedBound) return;
+  // Intentionally DON'T removeAttribute('transform') — leaving the translate
+  // in place keeps the polygon visually at its last position, which matches
+  // what the physical carriage actually shows (the bridge stops getting
+  // updates but doesn't move). Snapping back to home would lie about the
+  // carriage state. The translate gets overwritten on the next bind anyway.
+  trackedBound.poly.classList.remove('paddle-bound');
+  trackedBound = null;
+  // Keep the grabbing cursor if a flame is still being carried.
+  if (!carryingFire) document.body.classList.remove('cursor-grabbing');
+}
+
+function applyTrackingTransform() {
+  if (!trackedBound) return;
+  // Two coordinate spaces in play:
+  //   - SCREEN space: where the polygon visually appears (mouse coords too).
+  //   - CARRIAGE space: what the bridge consumes via x_px (steps_per_px
+  //     and zero_px in calibration.json map carriage-X to motor steps).
+  // The alignment relates them:  drawn = carriage * scale + offset.
+  //
+  // Mouse interaction is screen-space (the click point stays under the
+  // cursor 1:1 as you drag). The publisher publishes carriage-space. The
+  // rail limits are carriage-space (derived from min/max_steps).
+  //
+  // Doing all the math in carriage-space and only converting back to screen
+  // for the SVG transform avoids the "apply alignment twice" bug where a
+  // non-identity alignment would shift the polygon on every bind.
+  const desiredDrawn = mouseClientX - trackedBound.grabOffset;
+  const desiredCarriage = (desiredDrawn - projectionAlign.x_offset) / projectionAlign.x_scale;
+  const carriage = clampToRail(desiredCarriage);
+  const drawn = carriage * projectionAlign.x_scale + projectionAlign.x_offset;
+  trackedBound.poly.setAttribute('transform', `translate(${drawn - trackedBound.homeCx} 0)`);
+}
+
+// ----- flame-carry interaction (candle scene) -----
+// Two-click ritual (NOT click-and-hold): the first click on a flame-grabbable
+// object spawns a 🔥 and "grabs" it (closed-hand cursor); the next click
+// releases it onto whatever you click (cursor reopens) and lights that candle.
+// So you "carry the flame" from one candle to the next. An optional
+// `flame_source` object (label === "flame_source") is purely decorative — it
+// can be grabbed from but never dispatches a device. Frontend-only state.
+const flameEl = document.getElementById('flame-cursor');
+let carryingFire = false;
+// How far (px) the 🔥 rides below the cursor tip. Default 14; overridable per
+// scene via scene.flame_offset_y (and size via scene.flame_size). Set in
+// loadObjects() from /api/scene.
+let flameOffsetY = 14;
+
+function isFlameSourceObj(obj) {
+  // Marker survives editor round-trips via the label (or an explicit `role`).
+  return obj && (
+    obj.role === 'flame_source' ||
+    (obj.label || '').trim().toLowerCase() === 'flame_source'
+  );
+}
+
+function positionFlame(x, y) {
+  flameEl.style.left = x + 'px';
+  flameEl.style.top = (y + flameOffsetY) + 'px';   // below the cursor tip
+}
+
+function pickUpFlame(x, y) {
+  carryingFire = true;
+  document.body.classList.add('cursor-grabbing');   // closed hand while carrying
+  flameEl.style.display = 'block';
+  positionFlame(x, y);
+}
+
+function dropFlame() {
+  if (!carryingFire) return;
+  carryingFire = false;
+  flameEl.style.display = 'none';
+  // Don't yank the grabbing cursor if a tracking polygon is still bound to it.
+  if (!trackedBound) document.body.classList.remove('cursor-grabbing');
+}
+
+window.addEventListener('mousemove', (e) => {
+  mouseClientX = toDesignX(e.clientX);
+  // The 🔥 is a position:fixed DOM element — screen px, no conversion.
+  if (carryingFire) positionFlame(e.clientX, e.clientY);
+  applyTrackingTransform();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (trackedBound) unbindTracking();
+    dropFlame();   // Escape also cancels a carried flame
+  }
+});
+
+// 60Hz telemetry — only pushes while bound. Mirrors brick_breaker game.html's
+// /api/paddle/push body so the existing stepper bridge subscribing to
+// /ws/paddle reads { x_px } off the same wire format.
+setInterval(() => {
+  if (!trackedBound) return;
+  // Publish CARRIAGE-space X (what the bridge consumes) — NOT the polygon's
+  // screen-space drawn X. The bridge's stepper calibration assumes x_px is
+  // the calibration-space pixel; visual alignment (offset/scale) is purely
+  // for the projector, not for the bridge.
+  const desiredDrawn = mouseClientX - trackedBound.grabOffset;
+  const desiredCarriage = (desiredDrawn - projectionAlign.x_offset) / projectionAlign.x_scale;
+  const carriage = clampToRail(desiredCarriage);
+  const t = performance.now();
+  const ring = trackedBound.vxRing;
+  ring.push({ t, x: carriage });
+  while (ring.length > 1 && t - ring[0].t > VX_WINDOW_MS) ring.shift();
+  let vx = 0;
+  if (ring.length >= 2) {
+    const a = ring[0], b = ring[ring.length - 1];
+    if (b.t > a.t) vx = (b.x - a.x) * 1000 / (b.t - a.t);
+  }
+  // Server persists each push to disk (paddle_state.json) — stores the
+  // carriage X. /api/paddle returns that on reload so the runtime page can
+  // restore the polygon at carriage * scale + offset.
+  fetch('/api/paddle/push', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({
+      x_frac: projectorW > 0 ? carriage / projectorW : 0,
+      x_px: carriage,
+      width_px: trackedBound.bboxW,
+      vx,
+      t_ms: Math.round(t),
+    }),
+  }).catch(() => {});
+}, 16);
+
+let currentObjects = [];
+async function loadObjects() {
+  // Canvas geometry first: the polygons' coordinate space is the projector
+  // rectangle the server was started with, exactly like /editor's canvas.
+  try {
+    const scene = await (await fetch('/api/editor/scene')).json();
+    if (Array.isArray(scene.projector) && scene.projector.length === 2) {
+      [projectorW, projectorH] = scene.projector;
+      setViewbox();
+    }
+  } catch (e) { /* fall back to the window-sized viewBox set above */ }
+  // Scene flags from the objects-file `scene:` block (GET /api/scene):
+  //   flame_carry    — mechanic on/off (a ?flame= URL param overrides this)
+  //   flame_size     — 🔥 font-size in px (default 30)
+  //   flame_offset_y — px the 🔥 rides below the cursor (default 14)
+  // Done before rendering so the grab affordance + sizing paint on first frame.
+  try {
+    const sc = await (await fetch('/api/scene')).json();
+    if (!flameParamPresent) flameMode = !!sc.flame_carry;
+    if (sc.flame_size) flameEl.style.fontSize = sc.flame_size + 'px';
+    if (sc.flame_offset_y != null) flameOffsetY = sc.flame_offset_y;
+  } catch (e) { /* defaults: OFF, 30px, 14px below */ }
+  for (const a of document.querySelectorAll('#picker a[data-flame]')) {
+    a.classList.toggle('current', a.dataset.flame === (flameMode ? '1' : '0'));
+  }
+  const res = await fetch('/api/objects');
+  const objects = await res.json();
+  currentObjects = objects;
+  status.textContent = `[${effect}] ${objects.length} object${objects.length === 1 ? '' : 's'} · ${projectorW}x${projectorH}`;
+  // SVG draw order = z-order (last appended is on top). Put occluders first
+  // so any "normal" polygon drawn over an occluder receives the clicks and
+  // shows its hover effect. The occluder still hides the cursor wherever
+  // no normal polygon covers it (base `polygon.obj { cursor: none }`).
+  const ordered = [
+    ...objects.filter(o => o.style === 'occluder'),
+    ...objects.filter(o => o.style !== 'occluder'),
+  ];
+  for (const obj of ordered) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const targetId = obj.device_id || obj.id;
+
+    const isOccluder = obj.style === 'occluder';
+    // Per-object animation override: obj.animation.effect wins; else fall back
+    // to the URL ?effect=X global. CSS keys off polygon.obj.fx-X (per-polygon)
+    // rather than body.fx-X (global) so each object can pick its own effect.
+    const a = obj.animation || {};
+    const ap = obj.appearance || {};
+    const polyEffect = EFFECTS.includes(a.effect) ? a.effect : effect;
+
+    // Per-object image: emit a <clipPath> + <image> BEFORE the polygon so the
+    // polygon (and its hover effect) renders on top. The clip-path constrains
+    // the image to the polygon shape; preserveAspectRatio controls how the
+    // image fits the bounding box. Skipped for occluders — occluders are
+    // intentionally opaque-black with no UI surface area.
+    if (!isOccluder && ap.image && ap.image.src) {
+      renderObjectImage(svg, ns, obj, ap.image);
+    }
+
+    const poly = document.createElementNS(ns, 'polygon');
+    let cls = 'obj';
+    if (isOccluder) cls += ' occluder';
+    else cls += ' fx-' + polyEffect;
+    // Tag tracking polygons so the CSS can show `cursor: grab` on hover
+    // (open-hand affordance for "click to take control"). The body-level
+    // `cursor-grabbing` class takes over once bound.
+    if (obj.tracking && obj.tracking.binding === 'click_to_bind') cls += ' tracking';
+    // Flame-carry affordance: the source and any candle target get the
+    // open-hand `grab` cursor on hover (when not already carrying).
+    const isFlameSource = isFlameSourceObj(obj);
+    const isFlameTarget = !!obj.device_id && /^candle_/.test(obj.device_id);
+    // Only show the grab affordance when the carry mechanic is enabled.
+    if (flameMode && (isFlameSource || isFlameTarget)) cls += ' flame-grabbable';
+    poly.setAttribute('class', cls);
+    poly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+    // Inline CSS variables override the effect's defaults. Numbers serialize
+    // straight in; color is a hex like "#ffaa55" (Editor-side schema validates).
+    const styleParts = [];
+    if (a.color)   styleParts.push(`--obj-color: ${a.color}`);
+    if (typeof a.intensity === 'number') styleParts.push(`--obj-intensity: ${a.intensity}`);
+    if (typeof a.speed     === 'number') styleParts.push(`--obj-speed: ${a.speed}`);
+    if (typeof a.fill_opacity === 'number') styleParts.push(`--obj-fill-opacity: ${a.fill_opacity}`);
+
+    // Per-object idle appearance — write CSS variables, NOT direct properties.
+    // Inline `style="fill: ..."` has higher specificity than any selector
+    // including `:hover`, so direct props would defeat the fx-* hover effects.
+    // CSS vars sidestep this: the base rule reads `var(--ap-fill, default)`,
+    // hover rules set `fill: ...` explicitly and win on hover because their
+    // selector is more specific. Occluders ignore all of this — their CSS
+    // uses !important to defeat any override.
+    if (!isOccluder && ap.outline) {
+      const op = ap.outline.opacity != null ? ap.outline.opacity : 1;
+      if (ap.outline.color != null) {
+        styleParts.push(`--ap-stroke: ${rgbaFromHex(ap.outline.color, op)}`);
+      } else if (ap.outline.opacity != null) {
+        styleParts.push(`--ap-stroke-opacity: ${op}`);
+      }
+      if (ap.outline.width != null) styleParts.push(`--ap-stroke-width: ${ap.outline.width}`);
+      if (ap.outline.dash) {
+        styleParts.push(`--ap-stroke-dash: ${DASH_PATTERNS[ap.outline.dash] || 'none'}`);
+      }
+    }
+    if (!isOccluder && ap.fill && (ap.fill.color != null || ap.fill.opacity != null)) {
+      const color = ap.fill.color || '#ffffff';
+      const op = ap.fill.opacity != null ? ap.fill.opacity : 0;
+      styleParts.push(`--ap-fill: ${rgbaFromHex(color, op)}`);
+    }
+
+    if (styleParts.length) poly.setAttribute('style', styleParts.join('; '));
+    poly.setAttribute('data-id', obj.id);
+    poly.setAttribute('data-target', targetId);
+    if (!isOccluder) {
+      // Occluders absorb pointer events (cursor still hidden) but don't notify
+      // the server — they have no device behavior, and we don't want hover
+      // events for masked-out areas cluttering logs.
+      poly.addEventListener('mouseenter', () => {
+        send({type:'hover', id:targetId, enter:true});
+        // Targeted pulse-ring activation — sibling-selector ~ would match all later rings.
+        for (const r of document.querySelectorAll(`polygon.pulse-ring[data-for="${CSS.escape(targetId)}"]`)) {
+          r.classList.add('active');
+        }
+        // Per-object hover sound. obj.sound is {src, gain}.
+        if (obj.sound && obj.sound.src) playObjectSound(obj.id, obj.sound);
+      });
+      poly.addEventListener('mouseleave', () => {
+        send({type:'hover', id:targetId, enter:false});
+        for (const r of document.querySelectorAll(`polygon.pulse-ring[data-for="${CSS.escape(targetId)}"]`)) {
+          r.classList.remove('active');
+        }
+      });
+      const isTracking = obj.tracking && obj.tracking.binding === 'click_to_bind';
+      poly.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        hideContextMenu();
+        // Pointer-tracking polygons: clicks toggle bind/unbind instead of
+        // dispatching to a device. The point of these polygons is to drive
+        // the physical stepper carriage with the mouse — firing a click
+        // device on every bind/unbind would be surprising.
+        if (isTracking) {
+          if (trackedBound && trackedBound.poly === poly) {
+            unbindTracking();
+          } else {
+            bindTracking(poly, obj, ev.clientX);
+          }
+          return;
+        }
+        // Visual + audio click feedback (overlay animation + sound). Fires
+        // alongside whatever device dispatch happens; the two are independent.
+        const clickFeedback = () => {
+          if (obj.click && obj.click.effect) playClickAnimation(svg, ns, obj, obj.click);
+          if (obj.click && obj.click.sound && obj.click.sound.src) {
+            playObjectSound(obj.id + ':click', obj.click.sound);
+          }
+        };
+        // ----- flame-carry mechanic (flameMode) -----
+        if (flameMode) {
+          if (!carryingFire) {
+            // Empty-handed: clicking a grabbable target spawns + grabs the 🔥
+            // (closed hand). No device dispatch on the grab — you're taking
+            // fire, not lighting. Non-grabbable objects fall through to normal.
+            if (isFlameSource || isFlameTarget) {
+              pickUpFlame(ev.clientX, ev.clientY);
+              clickFeedback();
+              return;
+            }
+          } else {
+            // Carrying: this click releases the flame onto the clicked object
+            // (cursor reopens) and lights it — unless it's the decorative
+            // flame_source, which has no device.
+            dropFlame();
+            if (!isFlameSource) {
+              send({type:'click', id:targetId, button:'left'});
+              clickFeedback();
+            }
+            return;
+          }
+        }
+        // Base path (flameMode off, or empty-handed click on a non-grabbable
+        // object): a flame_source stays decorative; everything else dispatches.
+        if (isFlameSource) return;
+        send({type:'click', id:targetId, button:'left'});
+        clickFeedback();
+      });
+      poly.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        lastCtxX = ev.clientX;
+        lastCtxY = ev.clientY;
+        pendingMenuFor = targetId;
+        send({type:'menu', id:targetId});
+      });
+    } else {
+      // Even for occluders, swallow right-click so the browser's native menu
+      // doesn't pop on the projector.
+      poly.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    }
+    svg.appendChild(poly);
+
+    // Sibling label for hover affordance — skip for occluders, and skip if
+    // the object's appearance.label.hidden flag is set. The displayed text
+    // can be overridden via appearance.label.text; falls back to obj.label.
+    const apLabel = ap.label || {};
+    const labelText = apLabel.text != null ? apLabel.text : obj.label;
+    // The flame_source marker lives in the label; never paint it on the wall.
+    const isMarkerLabel = (labelText || '').trim().toLowerCase() === 'flame_source';
+    if (labelText && !isMarkerLabel && !isOccluder && !apLabel.hidden) {
+      const xs = obj.polygon.map(p => p[0]);
+      const ys = obj.polygon.map(p => p[1]);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const top = Math.min(...ys);
+      const lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('class', 'label');
+      lbl.setAttribute('x', cx);
+      lbl.setAttribute('y', top - 8);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.textContent = labelText;
+      svg.appendChild(lbl);
+    }
+
+    // Pulse effect: a sibling polygon that animates only when the main poly is hovered.
+    if (effect === 'pulse') {
+      const ring = document.createElementNS(ns, 'polygon');
+      ring.setAttribute('class', 'pulse-ring');
+      ring.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+      ring.setAttribute('data-for', targetId);
+      svg.appendChild(ring);
+    }
+  }
+}
+loadObjects().then(async () => {
+  // Restore the tracked polygon to the server's last-known X. The server
+  // persists every push to disk (paddle_state.json) so any browser opening
+  // the page sees the same position as the physical carriage — they're both
+  // sourced from the same persisted state.
+  //
+  // `published` distinguishes "real position exists" from "default x_px=0"
+  // (fresh server start with no history). Without that flag we'd snap the
+  // polygon to the screen's left edge on every fresh boot. Polygon stays
+  // UNBOUND — user re-clicks to take control.
+  let snap;
+  try { snap = await (await fetch('/api/paddle')).json(); } catch (e) { return; }
+  if (!snap?.published || !Number.isFinite(snap.x_px)) return;
+  for (const poly of document.querySelectorAll('polygon.obj')) {
+    const obj = currentObjects.find(o => o.id === poly.getAttribute('data-id'));
+    if (obj?.tracking?.binding === 'click_to_bind') {
+      const bb = polygonBbox(obj.polygon);
+      const homeCx = bb.x + bb.w / 2;
+      const clamped = clampToRail(snap.x_px);
+      const drawnX = clamped * projectionAlign.x_scale + projectionAlign.x_offset;
+      poly.setAttribute('transform', `translate(${drawnX - homeCx} 0)`);
+      break;
+    }
+  }
+});
+</script>
+</body>
+</html>

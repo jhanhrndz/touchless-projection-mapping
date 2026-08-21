@@ -1,0 +1,50 @@
+[project]
+name = "interactive-projection-mapping"
+version = "1.0.0"
+description = "Project a clickable UI onto real objects in your room, and wire the clicks to real hardware."
+license = "GPL-3.0-only"
+requires-python = ">=3.12"
+# No OpenCV, no numpy: there is no camera in this build. The projector
+# rectangle is configured (--projector-size), not measured, so the whole
+# computer-vision dependency chain drops out.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "python-kasa>=0.10.2",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.22",
+    "pillow>=12.1.1",
+]
+
+# A PEP 735 dependency group, not a [project.optional-dependencies] extra:
+# uv installs the `dev` group by default on `uv sync` / `uv run`, so the
+# documented `uv run pytest` works on a fresh clone with no extra flag.
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/runtime",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "hardware: requires a physical device on the LAN (skipped by default)",
+]
+filterwarnings = [
+    # Third-party: starlette's TestClient import shim. Not actionable here,
+    # and it keeps the suite's output at a clean "539 passed".
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

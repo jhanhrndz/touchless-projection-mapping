@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Editor projection</title>
+<style>
+  /* Matte-black background so the wall isn't lit by chrome. The same SVG is
+     interactive here as on /editor — both pages POST changes to
+     /api/editor/draft and poll each other's writes. */
+  html, body {
+    margin: 0; padding: 0;
+    background: black;
+    overflow: hidden;
+    height: 100vh;
+    color: white;
+    font-family: ui-monospace, Menlo, monospace;
+    /* Crosshair cursor over the canvas so the user can aim. The /editor page
+       chose `cursor: none` originally so a webcam-pointed-at-the-wall would
+       not see a host OS cursor; now that the projection IS the editor we have
+       to show one. Press H to hide the chrome panel if it gets in the way. */
+  }
+  svg#overlay { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  svg#overlay.dragging-vertex { cursor: grabbing; }
+  svg#overlay.dragging-body   { cursor: grabbing; }
+
+  /* Saved (non-active) polygon — visible reference. */
+  polygon.saved {
+    fill: rgba(255, 255, 255, 0.04);
+    stroke: rgba(255, 255, 255, 0.55);
+    stroke-width: 1.5;
+    pointer-events: all;
+    cursor: move;
+  }
+  polygon.saved:hover { fill: rgba(255, 255, 255, 0.08); }
+  /* Active polygon — the one currently being drawn / edited. */
+  polygon.active {
+    fill: rgba(255, 170, 85, 0.18);
+    stroke: rgba(255, 170, 85, 1);
+    stroke-width: 2.5;
+    pointer-events: all;
+    cursor: move;
+  }
+  /* Occluder polygons — solid black + dashed outline so the user can SEE
+     where they are while editing (otherwise they're invisible against the
+     wall). At runtime they render as pure black with no outline. */
+  polygon.occluder.saved,
+  polygon.occluder.active {
+    fill: #000;
+    stroke: rgba(255, 170, 85, 0.85);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 6;
+  }
+  /* Polyline for in-progress (1-2 point) shapes. */
+  polyline.draft {
+    fill: none;
+    stroke: rgba(255, 170, 85, 0.85);
+    stroke-width: 2;
+    pointer-events: none;
+  }
+  /* Vertex dots on the active polygon. Visible circle (r=5) painted first;
+     transparent hit ring (r=14) painted on top so it wins the hit-test even
+     when polygons overlap (mirrors the editor.html convention). */
+  circle.vertex {
+    fill: rgba(255, 170, 85, 1);
+    stroke: black;
+    stroke-width: 1;
+    pointer-events: none;
+    transition: r 80ms;
+  }
+  circle.vertex.selected { fill: #fff; stroke: rgba(255,170,85,1); stroke-width: 2; }
+  circle.vertex-hit { fill: transparent; pointer-events: all; cursor: grab; }
+  circle.vertex-hit:hover + circle.vertex { r: 8; }
+  /* Midpoint handle — click to insert a new vertex into that edge. */
+  circle.midpoint {
+    fill: rgba(255, 170, 85, 1); fill-opacity: 0.35;
+    stroke: rgba(255, 170, 85, 1); stroke-opacity: 0.6;
+    stroke-width: 1; pointer-events: none;
+  }
+  circle.midpoint-hit { fill: transparent; pointer-events: all; cursor: copy; }
+  circle.midpoint-hit:hover + circle.midpoint { fill-opacity: 0.9; r: 6; }
+  text.label { fill: rgba(255,255,255,0.75); font-size: 18px; pointer-events: none; }
+
+  /* Live cursor preview — held spacebar on the other window puts a dot here. */
+  circle.cursor-preview {
+    fill: rgba(255, 170, 85, 0.5);
+    stroke: rgba(255, 220, 120, 1);
+    stroke-width: 3;
+    pointer-events: none;
+  }
+
+  /* Floating control panel — translucent so the polygon canvas stays
+     usable underneath. Press H to hide if the projector beam is washing
+     it out on the wall. */
+  #panel {
+    position: fixed; right: 12px; bottom: 12px;
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 12px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    font-size: 12px;
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 220px;
+  }
+  #panel.hidden { display: none; }
+  #panel button {
+    background: #333; color: #e6e6e6; border: 1px solid #444;
+    padding: 5px 9px; font-family: inherit; font-size: 11px;
+    cursor: pointer; border-radius: 3px;
+  }
+  #panel button:hover { background: #444; }
+  #panel button.primary { background: rgba(255,170,85,1); color: #1a1a1a;
+    border-color: rgba(255,170,85,1); font-weight: bold; }
+  #panel button.primary:hover { background: #ffbb77; }
+  #panel button.danger { color: #ff7777; border-color: #553333; }
+  #panel .row { display: flex; gap: 4px; align-items: center; }
+  #panel .row > * { flex: 1; }
+  #panel select {
+    background: #1a1a1a; color: #e6e6e6; border: 1px solid #444;
+    padding: 4px 6px; font-family: inherit; font-size: 11px; border-radius: 3px;
+    max-width: 100%;
+  }
+  #status {
+    position: fixed; left: 8px; top: 8px;
+    color: #555; font-size: 11px;
+    pointer-events: none;
+  }
+  #toast {
+    position: fixed; left: 50%; top: 14px; transform: translateX(-50%);
+    background: #333; padding: 8px 14px; border-radius: 6px;
+    opacity: 0; transition: opacity 200ms;
+    pointer-events: none; z-index: 10;
+  }
+  #toast.show { opacity: 1; }
+  #hint {
+    color: #777; font-size: 10px; line-height: 1.4;
+    border-top: 1px solid #2a2a2a; padding-top: 6px; margin-top: 2px;
+  }
+  kbd-style {
+    background: #333; border: 1px solid #555; border-radius: 3px;
+    padding: 0 4px; font-size: 9px; color: #ccc; display: inline-block;
+  }
+</style>
+</head>
+<body>
+<div id="status">…</div>
+<svg id="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+<div id="panel">
+  <div class="row">
+    <button id="new" class="primary">+ New</button>
+    <button id="delete" class="danger">Delete</button>
+    <button id="save">Save</button>
+  </div>
+  <select id="object-select" title="active object">
+    <option value="">— no active object —</option>
+  </select>
+  <div id="hint">
+    <kbd-style>click</kbd-style> add vertex ·
+    <kbd-style>drag</kbd-style> move ·
+    <kbd-style>shift+click</kbd-style> remove vertex<br>
+    <kbd-style>⌘Z</kbd-style> undo ·
+    <kbd-style>del</kbd-style> delete ·
+    <kbd-style>esc</kbd-style> deselect ·
+    <kbd-style>H</kbd-style> hide panel
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const POLL_MS = 220;
+const DRAFT_PUSH_MS = 80;
+const DRAG_THRESHOLD_PX = 5;
+const MAX_HISTORY = 50;
+
+const svg = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
+const toast = document.getElementById('toast');
+const panel = document.getElementById('panel');
+const objectSelect = document.getElementById('object-select');
+
+// Unique per page-load so the server can tell our own POST echoes from real
+// remote changes when we poll. Random hex is plenty unique for two-tab use.
+const CLIENT_ID = 'proj_' + Math.random().toString(16).slice(2, 10);
+
+let projW = 1920, projH = 1080;
+let objects = [];   // [{id, label, points:[[x,y],...], device_id, style}]
+let activeId = null;
+let selectedVertex = null;  // {objId, vIdx}
+let cursor = null;          // {x, y, visible} — surfaced by the other window
+let lastSeenVersion = 0;    // last version we adopted from the server
+
+// Snapshot stack for undo. Same shape as editor.html.
+let history = [];
+
+function setViewbox() {
+  svg.setAttribute('viewBox', `0 0 ${projW} ${projH}`);
+}
+
+function showToast(msg, ms = 1400) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+function snapshot() {
+  history.push({
+    objects: JSON.parse(JSON.stringify(objects)),
+    activeId,
+    selectedVertex: selectedVertex ? { ...selectedVertex } : null,
+  });
+  if (history.length > MAX_HISTORY) history.shift();
+}
+
+function undo() {
+  if (history.length === 0) { showToast('nothing to undo'); return false; }
+  const s = history.pop();
+  objects = s.objects;
+  activeId = s.activeId;
+  selectedVertex = s.selectedVertex;
+  render();
+  pushDraft();
+  showToast('undo');
+  return true;
+}
+
+function newId() {
+  return 'obj_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(16).slice(2, 10);
+}
+
+function round1(n) { return Math.round(n * 10) / 10; }
+
+async function fetchProjectorDims() {
+  try {
+    const res = await fetch('/api/editor/scene');
+    const meta = await res.json();
+    if (meta.projector && meta.projector.length === 2) {
+      projW = meta.projector[0];
+      projH = meta.projector[1];
+    }
+  } catch (e) { /* defaults */ }
+  setViewbox();
+}
+
+// ---------- draft sync ----------
+//
+// Both /editor and /editor/projection POST to /api/editor/draft on every
+// change. The server tags each draft with the writer's client_id and bumps
+// a monotonic `version`. On poll, this page adopts the server state when:
+//   - the version is newer than what we last adopted, AND
+//   - the server's client_id is not ours (otherwise we'd echo our own write).
+// During an active drag we skip adoption entirely so the in-flight drag
+// isn't clobbered by an older snapshot landing late.
+
+let _draggingActive = false;
+let _draftTimer = null;
+let _draftPending = false;
+
+function pushDraft() {
+  _draftPending = true;
+  if (_draftTimer) return;
+  _draftTimer = setTimeout(async () => {
+    _draftTimer = null;
+    if (!_draftPending) return;
+    _draftPending = false;
+    const payload = {
+      client_id: CLIENT_ID,
+      active_id: activeId,
+      objects: objects.map(o => ({
+        id: o.id,
+        label: o.label,
+        // Send under both keys: /api/editor/save uses `polygon`, the projection
+        // poll convention is `points`. Send `points`; receivers accept either.
+        points: o.points,
+        device_id: o.device_id || null,
+        style: o.style || 'normal',
+        // Round-trip style fields so the peer /editor doesn't lose them.
+        animation: o.animation || {},
+        appearance: o.appearance || {},
+        sound: o.sound || {},
+        click: o.click || {},
+        tracking: o.tracking || {},
+        notes: o.notes || '',
+      })),
+      cursor: cursor || null,
+    };
+    try {
+      const res = await fetch('/api/editor/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        if (typeof body.version === 'number') {
+          // Mark this version as "seen" so the next poll round doesn't
+          // re-apply our own write back over us.
+          lastSeenVersion = body.version;
+        }
+      }
+    } catch (e) { /* server may be reloading */ }
+    if (_draftPending) pushDraft();
+  }, DRAFT_PUSH_MS);
+}
+
+function adoptDraft(draft) {
+  // Map the inbound objects to our local schema. Accept both `points` (editor
+  // convention) and `polygon` (objects.json convention) — both pages send the
+  // former but we tolerate either.
+  objects = (draft.objects || []).map(o => ({
+    id: o.id,
+    label: o.label || '',
+    points: (o.points || o.polygon || []).map(p => [p[0], p[1]]),
+    device_id: o.device_id || null,
+    style: o.style === 'occluder' ? 'occluder' : 'normal',
+    // Preserve fields this page doesn't render but must round-trip on save.
+    animation:  o.animation  ? {...o.animation}  : {},
+    appearance: o.appearance ? JSON.parse(JSON.stringify(o.appearance)) : {},
+    sound:      o.sound      ? {...o.sound}      : {},
+    click:      o.click      ? {...o.click}      : {},
+    tracking:   o.tracking   ? {...o.tracking}   : {},
+    notes:      o.notes      || '',
+  }));
+  activeId = draft.active_id || null;
+  // Reset the local selection if it no longer points at a valid vertex —
+  // an object may have been deleted or its point list shortened remotely.
+  if (selectedVertex) {
+    const obj = objects.find(o => o.id === selectedVertex.objId);
+    if (!obj || selectedVertex.vIdx >= obj.points.length) selectedVertex = null;
+  }
+  cursor = draft.cursor || null;
+}
+
+async function tick() {
+  try {
+    const res = await fetch('/api/editor/draft', { cache: 'no-store' });
+    const draft = await res.json();
+    const remoteVersion = typeof draft.version === 'number' ? draft.version : 0;
+    const remoteClient = draft.client_id || null;
+    // Adopt only if the server has news we haven't seen AND it didn't come
+    // from us. Also skip while dragging — the user's in-flight gesture is
+    // newer than anything the server can hand us.
+    if (!_draggingActive
+        && remoteVersion > lastSeenVersion
+        && remoteClient !== CLIENT_ID) {
+      adoptDraft(draft);
+      lastSeenVersion = remoteVersion;
+      render();
+    }
+    statusEl.textContent =
+      `${objects.length} object${objects.length === 1 ? '' : 's'}` +
+      ` · v${remoteVersion} · ${projW}x${projH}`;
+  } catch (e) {
+    // server gone — try again next tick
+  }
+  setTimeout(tick, POLL_MS);
+}
+
+// ---------- rendering ----------
+
+function render() {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // Draw non-active objects FIRST so the active polygon's hit-test regions
+  // (vertices, midpoints) sit on top and resolve correctly.
+  const ordered = objects.slice().sort((a, b) =>
+    (a.id === activeId ? 1 : 0) - (b.id === activeId ? 1 : 0)
+  );
+  for (const obj of ordered) {
+    const points = obj.points || [];
+    if (points.length === 0) continue;
+    const isActive = obj.id === activeId;
+    const isOccluder = obj.style === 'occluder';
+
+    if (points.length >= 3) {
+      const poly = document.createElementNS(SVG_NS, 'polygon');
+      poly.setAttribute('points', points.map(p => `${p[0]},${p[1]}`).join(' '));
+      const cls = (isActive ? 'active' : 'saved') + (isOccluder ? ' occluder' : '');
+      poly.setAttribute('class', cls);
+      poly.dataset.role = 'body';
+      poly.dataset.objId = obj.id;
+      svg.appendChild(poly);
+    } else {
+      // 1-2 points — show as polyline so the in-progress trace is visible.
+      const line = document.createElementNS(SVG_NS, 'polyline');
+      line.setAttribute('points', points.map(p => `${p[0]},${p[1]}`).join(' '));
+      line.setAttribute('class', 'draft');
+      svg.appendChild(line);
+    }
+
+    if (isActive) {
+      // Midpoint handles — click to insert a vertex into that edge.
+      if (points.length >= 3) {
+        for (let i = 0; i < points.length; i++) {
+          const a = points[i];
+          const b = points[(i + 1) % points.length];
+          const mx = (a[0] + b[0]) / 2;
+          const my = (a[1] + b[1]) / 2;
+          const mid = document.createElementNS(SVG_NS, 'circle');
+          mid.setAttribute('cx', mx); mid.setAttribute('cy', my);
+          mid.setAttribute('r', 4);
+          mid.setAttribute('class', 'midpoint');
+          svg.appendChild(mid);
+          const mhit = document.createElementNS(SVG_NS, 'circle');
+          mhit.setAttribute('cx', mx); mhit.setAttribute('cy', my);
+          mhit.setAttribute('r', 13);
+          mhit.setAttribute('class', 'midpoint-hit');
+          mhit.dataset.role = 'midpoint';
+          mhit.dataset.objId = obj.id;
+          mhit.dataset.edgeIdx = String(i);
+          svg.appendChild(mhit);
+        }
+      }
+      // Vertex dots + invisible hit rings.
+      for (let i = 0; i < points.length; i++) {
+        const [x, y] = points[i];
+        const isSelected =
+          selectedVertex && selectedVertex.objId === obj.id && selectedVertex.vIdx === i;
+        const visible = document.createElementNS(SVG_NS, 'circle');
+        visible.setAttribute('cx', x); visible.setAttribute('cy', y);
+        visible.setAttribute('r', isSelected ? 8 : 5);
+        visible.setAttribute('class', isSelected ? 'vertex selected' : 'vertex');
+        svg.appendChild(visible);
+
+        const hit = document.createElementNS(SVG_NS, 'circle');
+        hit.setAttribute('cx', x); hit.setAttribute('cy', y);
+        hit.setAttribute('r', 14);
+        hit.setAttribute('class', 'vertex-hit');
+        hit.dataset.role = 'vertex';
+        hit.dataset.objId = obj.id;
+        hit.dataset.vIdx = String(i);
+        svg.appendChild(hit);
+      }
+    }
+
+    if (points.length >= 3 && obj.label) {
+      const xs = points.map(p => p[0]);
+      const ys = points.map(p => p[1]);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const top = Math.min(...ys);
+      const t = document.createElementNS(SVG_NS, 'text');
+      t.setAttribute('x', cx); t.setAttribute('y', top - 10);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'label');
+      t.textContent = obj.label;
+      svg.appendChild(t);
+    }
+  }
+
+  // Live cursor preview from the OTHER editor pane (spacebar-held).
+  if (cursor && cursor.visible) {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', cursor.x); c.setAttribute('cy', cursor.y);
+    c.setAttribute('r', 7);
+    c.setAttribute('class', 'cursor-preview');
+    svg.appendChild(c);
+  }
+
+  renderObjectSelect();
+}
+
+function renderObjectSelect() {
+  // Keep the dropdown in lockstep with the polygon list so the user can pick
+  // any object as the active one without hunting for it on the canvas.
+  while (objectSelect.options.length > 1) objectSelect.remove(1);
+  for (const obj of objects) {
+    const opt = document.createElement('option');
+    opt.value = obj.id;
+    const label = obj.label || '(unlabeled)';
+    const kind = obj.style === 'occluder' ? ' · occluder' : '';
+    opt.textContent = `${label} · ${obj.points.length}pt${kind}`;
+    objectSelect.appendChild(opt);
+  }
+  objectSelect.value = activeId || '';
+}
+
+// ---------- pointer-driven editing ----------
+
+function svgPoint(evt) {
+  const p = svg.createSVGPoint();
+  p.x = evt.clientX; p.y = evt.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  const local = p.matrixTransform(ctm.inverse());
+  return [round1(local.x), round1(local.y)];
+}
+
+function pointToSegmentDistance([px, py], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function insertVertexNearestEdge(obj, xy) {
+  if (obj.points.length < 2) { obj.points.push(xy); return; }
+  let bestIdx = 0; let bestDist = Infinity;
+  for (let i = 0; i < obj.points.length; i++) {
+    const a = obj.points[i];
+    const b = obj.points[(i + 1) % obj.points.length];
+    const d = pointToSegmentDistance(xy, a, b);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  obj.points.splice(bestIdx + 1, 0, [round1(xy[0]), round1(xy[1])]);
+}
+
+let drag = null;
+
+function setDragCursor() {
+  svg.classList.toggle('dragging-vertex', drag && drag.kind === 'vertex' && drag.moved);
+  svg.classList.toggle('dragging-body',   drag && drag.kind === 'body'   && drag.moved);
+}
+
+svg.addEventListener('pointerdown', (evt) => {
+  if (evt.button !== 0) return;
+  const xy = svgPoint(evt);
+  if (!xy) return;
+  _draggingActive = true;  // pause draft-poll adoption for the duration
+  const role = evt.target.dataset && evt.target.dataset.role;
+  if (role === 'vertex') {
+    drag = {
+      kind: 'vertex',
+      objId: evt.target.dataset.objId,
+      vIdx: parseInt(evt.target.dataset.vIdx, 10),
+      startClientX: evt.clientX, startClientY: evt.clientY,
+      moved: false, snapshotted: false,
+      shift: evt.shiftKey, alt: evt.altKey,
+    };
+    activeId = drag.objId;
+    selectedVertex = { objId: drag.objId, vIdx: drag.vIdx };
+    render();
+  } else if (role === 'midpoint') {
+    // Click on a midpoint inserts a vertex into the edge AND immediately
+    // starts dragging it — so the user can place it where they want.
+    const obj = objects.find(o => o.id === evt.target.dataset.objId);
+    if (!obj) { _draggingActive = false; return; }
+    const edgeIdx = parseInt(evt.target.dataset.edgeIdx, 10);
+    snapshot();
+    const a = obj.points[edgeIdx];
+    const b = obj.points[(edgeIdx + 1) % obj.points.length];
+    const newPt = [round1((a[0] + b[0]) / 2), round1((a[1] + b[1]) / 2)];
+    obj.points.splice(edgeIdx + 1, 0, newPt);
+    drag = {
+      kind: 'vertex',
+      objId: obj.id,
+      vIdx: edgeIdx + 1,
+      startClientX: evt.clientX, startClientY: evt.clientY,
+      moved: false, snapshotted: true,
+      shift: false, alt: false,
+    };
+    activeId = obj.id;
+    selectedVertex = { objId: obj.id, vIdx: edgeIdx + 1 };
+    render();
+    pushDraft();
+  } else if (role === 'body') {
+    const obj = objects.find(o => o.id === evt.target.dataset.objId);
+    if (!obj) { _draggingActive = false; return; }
+    drag = {
+      kind: 'body',
+      objId: obj.id,
+      startClientX: evt.clientX, startClientY: evt.clientY,
+      startSvg: xy,
+      startPoints: obj.points.map(p => [p[0], p[1]]),
+      moved: false, snapshotted: false,
+      shift: evt.shiftKey, alt: evt.altKey,
+    };
+    activeId = obj.id;
+    selectedVertex = null;
+    render();
+  } else {
+    drag = {
+      kind: 'canvas',
+      startClientX: evt.clientX, startClientY: evt.clientY,
+      startSvg: xy,
+      moved: false, snapshotted: false,
+    };
+    selectedVertex = null;
+    render();
+  }
+  try { svg.setPointerCapture(evt.pointerId); } catch (_) {}
+});
+
+window.addEventListener('pointermove', (evt) => {
+  if (!drag) return;
+  const dx = evt.clientX - drag.startClientX;
+  const dy = evt.clientY - drag.startClientY;
+  if (!drag.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+    drag.moved = true;
+    setDragCursor();
+  }
+  if (!drag.moved) return;
+  const xy = svgPoint(evt);
+  if (!xy) return;
+  if (drag.kind === 'vertex') {
+    const obj = objects.find(o => o.id === drag.objId);
+    if (obj && drag.vIdx < obj.points.length) {
+      if (!drag.snapshotted) { snapshot(); drag.snapshotted = true; }
+      obj.points[drag.vIdx] = [round1(xy[0]), round1(xy[1])];
+      render();
+      pushDraft();
+    }
+  } else if (drag.kind === 'body') {
+    const obj = objects.find(o => o.id === drag.objId);
+    if (obj) {
+      if (!drag.snapshotted) { snapshot(); drag.snapshotted = true; }
+      const tx = xy[0] - drag.startSvg[0];
+      const ty = xy[1] - drag.startSvg[1];
+      obj.points = drag.startPoints.map(([x, y]) => [round1(x + tx), round1(y + ty)]);
+      render();
+      pushDraft();
+    }
+  }
+});
+
+window.addEventListener('pointerup', (evt) => {
+  if (!drag) { _draggingActive = false; return; }
+  const xy = svgPoint(evt) || drag.startSvg;
+  if (!drag.moved) {
+    if (drag.kind === 'canvas') {
+      if (!activeId) {
+        showToast('Click "+ New" first');
+      } else {
+        const obj = objects.find(o => o.id === activeId);
+        if (obj && xy) {
+          snapshot();
+          obj.points.push([round1(xy[0]), round1(xy[1])]);
+          render();
+          pushDraft();
+        }
+      }
+    } else if (drag.kind === 'vertex' && drag.shift) {
+      // Shift+click on a vertex → delete it.
+      const obj = objects.find(o => o.id === drag.objId);
+      if (obj && drag.vIdx < obj.points.length) {
+        snapshot();
+        obj.points.splice(drag.vIdx, 1);
+        if (selectedVertex && selectedVertex.objId === obj.id
+            && selectedVertex.vIdx >= obj.points.length) {
+          selectedVertex = null;
+        }
+        render();
+        pushDraft();
+        showToast(`vertex ${drag.vIdx} deleted`);
+      }
+    } else if (drag.kind === 'body' && drag.alt) {
+      // Alt+click on a body → insert a vertex at the click location.
+      const obj = objects.find(o => o.id === drag.objId);
+      if (obj && xy) {
+        snapshot();
+        insertVertexNearestEdge(obj, xy);
+        render();
+        pushDraft();
+        showToast('vertex inserted');
+      }
+    }
+  }
+  try { svg.releasePointerCapture(evt.pointerId); } catch (_) {}
+  drag = null;
+  _draggingActive = false;
+  setDragCursor();
+});
+
+// ---------- keyboard ----------
+
+function isTypingTarget(target) {
+  return target instanceof HTMLInputElement
+      || target instanceof HTMLTextAreaElement
+      || (target && target.isContentEditable);
+}
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if (e.code === 'Escape') {
+    if (selectedVertex !== null) { selectedVertex = null; render(); return; }
+    if (activeId !== null) { activeId = null; render(); pushDraft(); }
+    return;
+  }
+  if (e.code === 'Delete' || e.code === 'Backspace') {
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    if (selectedVertex && activeId === selectedVertex.objId) {
+      const obj = objects.find(o => o.id === selectedVertex.objId);
+      if (obj && selectedVertex.vIdx < obj.points.length) {
+        snapshot();
+        obj.points.splice(selectedVertex.vIdx, 1);
+        showToast(`vertex deleted (${obj.points.length} remaining)`);
+        selectedVertex = null;
+        render(); pushDraft();
+      }
+    } else if (activeId) {
+      snapshot();
+      objects = objects.filter(o => o.id !== activeId);
+      activeId = objects.length ? objects[0].id : null;
+      selectedVertex = null;
+      render(); pushDraft();
+      showToast('object deleted');
+    }
+    return;
+  }
+  if (e.key.toLowerCase() === 'h' && !isTypingTarget(e.target)) {
+    panel.classList.toggle('hidden');
+    return;
+  }
+});
+
+// ---------- panel buttons ----------
+
+document.getElementById('new').addEventListener('click', () => {
+  snapshot();
+  const obj = { id: newId(), label: '', points: [], device_id: null, style: 'normal' };
+  objects.push(obj);
+  activeId = obj.id;
+  selectedVertex = null;
+  render();
+  pushDraft();
+  showToast('new object — click to add vertices');
+});
+
+document.getElementById('delete').addEventListener('click', () => {
+  if (!activeId) return;
+  snapshot();
+  objects = objects.filter(o => o.id !== activeId);
+  activeId = objects.length ? objects[0].id : null;
+  selectedVertex = null;
+  render();
+  pushDraft();
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+  const payload = {
+    objects: objects
+      .filter(o => o.points.length >= 3)
+      .map(o => {
+        const out = { id: o.id, label: o.label, polygon: o.points };
+        if (o.device_id && o.style !== 'occluder') out.device_id = o.device_id;
+        if (o.style && o.style !== 'normal') out.style = o.style;
+        // Round-trip the style-inspector fields so saving from this peer
+        // page doesn't wipe them (same fix as editor.html).
+        if (o.animation  && Object.keys(o.animation).length  > 0) out.animation  = o.animation;
+        if (o.appearance && Object.keys(o.appearance).length > 0) out.appearance = o.appearance;
+        if (o.sound      && Object.keys(o.sound).length      > 0) out.sound      = o.sound;
+        if (o.click      && Object.keys(o.click).length      > 0) out.click      = o.click;
+        if (o.tracking   && Object.keys(o.tracking).length   > 0) out.tracking   = o.tracking;
+        if (o.notes) out.notes = o.notes;
+        return out;
+      })
+  };
+  try {
+    const res = await fetch('/api/editor/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const j = await res.json();
+      showToast(`saved ${j.saved} object${j.saved === 1 ? '' : 's'}`);
+    } else {
+      showToast('save failed: ' + await res.text(), 2400);
+    }
+  } catch (e) {
+    showToast('save failed: ' + e.message, 2400);
+  }
+});
+
+objectSelect.addEventListener('change', (e) => {
+  activeId = e.target.value || null;
+  selectedVertex = null;
+  render();
+  pushDraft();
+});
+
+(async () => {
+  await fetchProjectorDims();
+  // Seed initial state from the server so we start aligned with /editor.
+  try {
+    const res = await fetch('/api/editor/draft');
+    const draft = await res.json();
+    adoptDraft(draft);
+    lastSeenVersion = typeof draft.version === 'number' ? draft.version : 0;
+  } catch (e) { /* empty start */ }
+  render();
+  tick();
+})();
+</script>
+</body>
+</html>

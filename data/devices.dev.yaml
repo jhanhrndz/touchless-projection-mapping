@@ -1,0 +1,14 @@
+# Mock device config — every entry is a no-op that just logs.
+#
+#   uv run python -m runtime --devices data/devices.dev.yaml
+#
+# Hardware-safety guarantee: clicks here CANNOT reach the real switch or the real
+# book pusher. Use this for editor work, styling, and local UI tinkering.
+
+- object_id: lamp_switch
+  type: mock
+  label: "Lamp switch (mock)"
+
+- object_id: book_pusher
+  type: mock
+  label: "Book pusher (mock)"

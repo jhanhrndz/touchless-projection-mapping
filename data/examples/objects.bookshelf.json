@@ -1,0 +1,246 @@
+[
+  {
+    "id": "obj_1779718692_e80311e7",
+    "label": "book_active",
+    "polygon": [
+      [
+        1458.6,
+        452.3
+      ],
+      [
+        1443.1,
+        123.5
+      ],
+      [
+        1473.8,
+        117.8
+      ],
+      [
+        1488.3,
+        451.6
+      ]
+    ],
+    "device_id": "book_pusher",
+    "animation": {
+      "color": "#ff40ff",
+      "fill_opacity": 0.95
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779719339_161e102b",
+    "label": "book_inactive",
+    "polygon": [
+      [
+        1406.6,
+        124.2
+      ],
+      [
+        1440.4,
+        124.4
+      ],
+      [
+        1452.2,
+        453.9
+      ],
+      [
+        1426.7,
+        453.9
+      ]
+    ],
+    "animation": {
+      "color": "#d58400",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779722976_40f31035",
+    "label": "book_inactive_2",
+    "polygon": [
+      [
+        1492.9,
+        451.4
+      ],
+      [
+        1512.6,
+        451.9
+      ],
+      [
+        1505.2,
+        115.9
+      ],
+      [
+        1478.6,
+        120.3
+      ]
+    ],
+    "animation": {
+      "color": "#669c35",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "outline": {
+        "width": 0.5
+      },
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779723170_de583315",
+    "label": "book_inactive_3",
+    "polygon": [
+      [
+        1518.6,
+        450.3
+      ],
+      [
+        1510.3,
+        108.1
+      ],
+      [
+        1521.1,
+        114.8
+      ],
+      [
+        1541.4,
+        449.8
+      ]
+    ],
+    "animation": {
+      "color": "#ff4013",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779724180_7f626468",
+    "label": "book_inactive_4",
+    "polygon": [
+      [
+        1557.1,
+        449.8
+      ],
+      [
+        1543.5,
+        448
+      ],
+      [
+        1525.1,
+        137
+      ],
+      [
+        1539,
+        150.4
+      ]
+    ],
+    "animation": {
+      "color": "#0433ff",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779725408_132d959c",
+    "label": "book_inactive_5",
+    "polygon": [
+      [
+        1557.4,
+        450.5
+      ],
+      [
+        1575.4,
+        451.5
+      ],
+      [
+        1558.6,
+        113.2
+      ],
+      [
+        1541.2,
+        121
+      ]
+    ],
+    "animation": {
+      "color": "#d9eb37",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779725684_66cdcf2d",
+    "label": "book_inactive_6",
+    "polygon": [
+      [
+        1407.6,
+        453.7
+      ],
+      [
+        1420.4,
+        453.7
+      ],
+      [
+        1405,
+        111
+      ],
+      [
+        1391.4,
+        110.2
+      ]
+    ],
+    "animation": {
+      "color": "#00fdff",
+      "fill_opacity": 1.0
+    },
+    "appearance": {
+      "label": {
+        "hidden": true
+      }
+    }
+  },
+  {
+    "id": "obj_1779739874_e1d1ac6a",
+    "label": "no mouse",
+    "polygon": [
+      [
+        1404.3,
+        455.6
+      ],
+      [
+        1394.3,
+        252.1
+      ],
+      [
+        1572.5,
+        267.9
+      ],
+      [
+        1580.4,
+        451.9
+      ]
+    ],
+    "style": "occluder"
+  }
+]

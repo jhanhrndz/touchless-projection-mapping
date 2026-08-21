@@ -1,0 +1,42 @@
+# One command:  docker compose up
+# Then open:    http://localhost:8000/
+#
+# Hardware-free sandbox: every click hits a MockDevice and is logged here as
+# a "[mock] ..." line. For the real lamp/bookshelf, run on the host instead
+# (see README) — Kasa discovery needs LAN broadcasts Docker's NAT won't carry.
+
+services:
+  projection:
+    build: .
+    image: interactive-projection-mapping:latest
+    # The image only ever exists locally — without this, compose first tries
+    # to pull it from a registry and opens the very first run with a scary
+    # "pull access denied ... may require 'docker login'" line.
+    pull_policy: build
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist authored polygons and /style uploads across restarts. The app
+      # resolves data/ relative to CWD; everything it writes there is already
+      # gitignored.
+      - ./data:/app/data
+    environment:
+      # The repo's hardware-safety guarantee: all mocks, clicks cannot reach
+      # a real switch or motor.
+      RUNTIME_DEVICES: data/devices.dev.yaml
+      RUNTIME_PROJECTOR_SIZE: 1920x1080
+      # lamp | bookshelf | none — worked example seeded when no objects.json
+      # exists yet, so / has something to click on first run.
+      SEED_EXAMPLE: lamp
+    env_file:
+      - path: .env
+        required: false
+    stop_grace_period: 10s
+
+  # Run the test suite in the same image:  docker compose run --rm tests
+  tests:
+    build: .
+    image: interactive-projection-mapping:latest
+    pull_policy: build
+    profiles: ["tools"]
+    entrypoint: ["uv", "run", "--no-sync", "pytest"]

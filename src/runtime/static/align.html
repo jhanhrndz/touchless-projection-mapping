@@ -1,0 +1,303 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Projection alignment</title>
+<style>
+  /* Black background like the runtime page so we're tuning under the same
+     visual conditions the real wall projection uses. */
+  html, body { margin: 0; padding: 0; background: #000; height: 100%; width: 100%; overflow: hidden; cursor: crosshair; }
+  svg#overlay { position: fixed; inset: 0; width: 100%; height: 100%; }
+
+  /* Tracked polygons stay VISIBLE here regardless of bind state — the whole
+     point of /align is to SEE where the projected polygon lands relative to
+     the physical carriage. Outline only, no fill. Cursor is grab/grabbing
+     for the same affordance as the runtime page. */
+  polygon.obj { stroke: rgba(255,160,80,0.9); stroke-width: 3; fill: none; pointer-events: all; cursor: grab; }
+  polygon.obj.paddle-bound { cursor: grabbing; }
+
+  /* Floating control panel — TOP-right so it stays clear of the popcorn's
+     sweep path along the bottom of the display. (Popcorn polygon in this
+     project lives at y≈960-1054 of a 1080 frame.) Semi-translucent dark
+     glass so the projector can show through if the panel happens to land
+     over the lamp or another fixed feature. */
+  #panel {
+    position: fixed; right: 16px; top: 16px;
+    background: rgba(20,20,20,0.92); color: #e6e6e6;
+    border: 1px solid #444; border-radius: 8px;
+    padding: 14px 16px; min-width: 280px;
+    font: 12px/1.4 ui-monospace, monospace;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    cursor: default;
+  }
+  #panel h2 { margin: 0 0 10px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #ffa050; }
+  #panel .row { display: grid; grid-template-columns: 64px 1fr 70px; align-items: center; gap: 8px; margin: 6px 0; }
+  #panel input[type=range] { width: 100%; }
+  #panel input[type=number] { background: #1a1a1a; color: #e6e6e6; border: 1px solid #555; padding: 3px 6px; border-radius: 3px; width: 60px; font: inherit; }
+  #panel button {
+    background: #1a1a1a; color: #e6e6e6; border: 1px solid #555;
+    padding: 6px 12px; border-radius: 4px; font: inherit; cursor: pointer;
+    margin-right: 6px;
+  }
+  #panel button:hover { background: #2a2a2a; }
+  #panel button.primary { background: #ffa050; color: #1a1a1a; border-color: #ffa050; font-weight: bold; }
+  #panel button.primary:hover { background: #ffb670; }
+  #panel .hint { color: #888; font-size: 11px; margin-top: 8px; }
+  #panel #status { color: #6f6; font-size: 11px; margin-top: 6px; min-height: 1.2em; }
+  #panel #live { color: #aaa; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<svg id="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+
+<div id="panel">
+  <h2>Projection alignment</h2>
+  <div class="row">
+    <label>X offset</label>
+    <input type="range" id="off-slider" min="-300" max="300" step="0.5" value="0" />
+    <input type="number" id="off-input" step="0.5" value="0" />
+  </div>
+  <div class="row">
+    <label>X scale</label>
+    <input type="range" id="sca-slider" min="0.5" max="1.5" step="0.001" value="1" />
+    <input type="number" id="sca-input" step="0.001" value="1" />
+  </div>
+  <div style="margin-top: 10px;">
+    <button id="save" class="primary">Save</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="live">carriage x_px: —</div>
+  <div id="status"></div>
+  <div class="hint">
+    Visual-only — does NOT move the stepper. Workflow:
+    <ol style="margin: 6px 0 0 18px; padding: 0; color: #888;">
+      <li>Park the carriage at a known physical X using <code>/</code>.</li>
+      <li>Open this page; click the polygon to drag it visually (carriage stays put).</li>
+      <li>Drag and/or tune offset/scale until the projected outline overlays the physical carriage.</li>
+      <li>Save.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('overlay');
+const offSlider = document.getElementById('off-slider');
+const offInput  = document.getElementById('off-input');
+const scaSlider = document.getElementById('sca-slider');
+const scaInput  = document.getElementById('sca-input');
+const liveEl    = document.getElementById('live');
+const statusEl  = document.getElementById('status');
+
+// Design space = the projector rectangle from /api/editor/scene, exactly like
+// / and /editor. Window size is only the fallback if the fetch fails — pinning
+// the viewBox to the window would push every polygon off-canvas in any window
+// smaller than the projector.
+let projectorW = window.innerWidth, projectorH = window.innerHeight;
+function setViewbox() {
+  svg.setAttribute('viewBox', `0 0 ${projectorW} ${projectorH}`);
+}
+setViewbox();
+
+// Screen px → design px under the letterboxed uniform scale
+// (preserveAspectRatio="xMidYMid meet"). Identity when the window matches
+// the projector size.
+function toDesignX(clientX) {
+  const s = Math.min(window.innerWidth / projectorW, window.innerHeight / projectorH);
+  if (!s || !isFinite(s)) return clientX;
+  const offsetX = (window.innerWidth - projectorW * s) / 2;
+  return (clientX - offsetX) / s;
+}
+
+// Mouse + bind state, mirrors runtime.html's pointer-tracking model but
+// stripped of everything the alignment workflow doesn't need (sound, hover
+// effects, click animations, device dispatch).
+let trackedBound = null;
+let mouseClientX = 0;
+let paddleLimits = { x_px_min: null, x_px_max: null };
+let align = { x_offset: 0.0, x_scale: 1.0 };
+
+function clampToRail(x) {
+  if (paddleLimits.x_px_min != null && x < paddleLimits.x_px_min) return paddleLimits.x_px_min;
+  if (paddleLimits.x_px_max != null && x > paddleLimits.x_px_max) return paddleLimits.x_px_max;
+  return x;
+}
+function polygonBbox(points) {
+  const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+function applyTransform() {
+  if (!trackedBound) return;
+  // Mouse is screen-space, rail limits are carriage-space, and the polygon
+  // is drawn at carriage * scale + offset. Doing the math in carriage-space
+  // ensures the polygon doesn't shift on bind under non-identity alignment
+  // (the "double-apply" bug). See runtime.html for the full explanation.
+  const desiredDrawn = mouseClientX - trackedBound.grabOffset;
+  const desiredCarriage = (desiredDrawn - align.x_offset) / align.x_scale;
+  const carriage = clampToRail(desiredCarriage);
+  const drawn = carriage * align.x_scale + align.x_offset;
+  trackedBound.poly.setAttribute('transform', `translate(${drawn - trackedBound.homeCx} 0)`);
+}
+
+window.addEventListener('mousemove', (e) => {
+  // Only consider movement over the SVG area (not the panel) — clicks on
+  // the panel set lastTarget that we check below. Always update mouseClientX
+  // though so the polygon follows even when the cursor briefly grazes the
+  // edge of the panel.
+  mouseClientX = toDesignX(e.clientX);
+  applyTransform();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && trackedBound) unbind();
+});
+
+async function loadObjects() {
+  // Only render TRACKING polygons here — the alignment slider only affects
+  // those (static polygons like the lamp are drawn from their objects.json
+  // coordinates verbatim, never shifted). Showing the lamp here too would
+  // suggest the slider moves it, which is wrong. For checking the lamp's
+  // position relative to the rest of the room, use /editor or /.
+  const res = await fetch('/api/objects');
+  const objs = await res.json();
+  for (const obj of objs) {
+    if (obj.style === 'occluder') continue;
+    if (!(obj.tracking && obj.tracking.binding === 'click_to_bind')) continue;
+    const poly = document.createElementNS(SVG_NS, 'polygon');
+    poly.setAttribute('class', 'obj');
+    poly.setAttribute('points', obj.polygon.map(p => p[0]+','+p[1]).join(' '));
+    poly.setAttribute('data-id', obj.id);
+    poly.addEventListener('click', (ev) => {
+      if (trackedBound && trackedBound.poly === poly) unbind();
+      else bind(poly, obj, ev.clientX);
+    });
+    svg.appendChild(poly);
+  }
+}
+
+function bind(poly, obj, clickX) {
+  if (trackedBound) unbind();
+  const bb = polygonBbox(obj.polygon);
+  // Capture grab offset (screen-space) so the click point stays under the
+  // cursor through the drag — clicking the polygon's left edge keeps that
+  // left edge under the mouse, not the polygon's center. Use the screen-
+  // space bounding rect since the polygon may already be translated from a
+  // prior bind. clickX may be omitted (e.g. programmatic bind) → 0 offset.
+  const rect = poly.getBoundingClientRect();
+  const currentCenterX = toDesignX(rect.left + rect.width / 2);
+  const grabOffset = (clickX != null ? toDesignX(clickX) : currentCenterX) - currentCenterX;
+  trackedBound = { poly, obj, homeCx: bb.x + bb.w/2, bboxW: bb.w, grabOffset };
+  // Seed mouseClientX from the click — first applyTransform call would
+  // otherwise use a stale value and snap the polygon visibly.
+  if (clickX != null) mouseClientX = toDesignX(clickX);
+  poly.classList.add('paddle-bound');
+  applyTransform();
+}
+function unbind() {
+  if (!trackedBound) return;
+  trackedBound.poly.classList.remove('paddle-bound');
+  trackedBound = null;
+}
+
+// NO publisher to /api/paddle/push on this page — /align is a visual tuning
+// tool, not a controller. Dragging the polygon here only repositions it on
+// the projector; the carriage stays wherever it last was. To move the
+// carriage, bind the polygon on the regular / page instead. This lets the
+// user park the carriage at a known physical position, then come here to
+// dial offset/scale until the projected outline overlays it.
+
+// ---- alignment controls ----
+
+async function pushDraft() {
+  try {
+    const r = await fetch('/api/projection_align/draft', {
+      method: 'POST', headers: {'content-type':'application/json'},
+      body: JSON.stringify({ x_offset: align.x_offset, x_scale: align.x_scale }),
+    });
+    if (!r.ok) statusEl.textContent = `draft push failed: ${r.status}`;
+  } catch (e) { statusEl.textContent = 'draft push error'; }
+  statusEl.textContent = '';
+}
+
+function syncInputs() {
+  offSlider.value = align.x_offset;
+  offInput.value  = align.x_offset.toFixed(2);
+  scaSlider.value = align.x_scale;
+  scaInput.value  = align.x_scale.toFixed(4);
+}
+
+function onAlignChange() {
+  align.x_offset = parseFloat(offInput.value) || 0;
+  align.x_scale  = parseFloat(scaInput.value)  || 1;
+  applyTransform();
+  pushDraft();
+}
+
+offSlider.addEventListener('input', () => { offInput.value = (+offSlider.value).toFixed(2); onAlignChange(); });
+offInput.addEventListener('input',  () => { offSlider.value = offInput.value;               onAlignChange(); });
+scaSlider.addEventListener('input', () => { scaInput.value = (+scaSlider.value).toFixed(4); onAlignChange(); });
+scaInput.addEventListener('input',  () => { scaSlider.value = scaInput.value;               onAlignChange(); });
+
+document.getElementById('save').addEventListener('click', async () => {
+  const r = await fetch('/api/projection_align/save', { method: 'POST' });
+  const body = await r.json();
+  // `persisted` is false when the server wasn't started with
+  // --projection-align PATH — the values applied, but nothing was written.
+  // Saying "saved" for that would be a lie the user only discovers after
+  // the next restart loses their tuning.
+  if (!r.ok) {
+    statusEl.textContent = 'save failed';
+  } else if (body.persisted) {
+    statusEl.textContent = `saved offset=${body.x_offset.toFixed(2)} scale=${body.x_scale.toFixed(4)}`;
+  } else {
+    statusEl.textContent = 'applied for this session only — start the server with --projection-align PATH to persist';
+  }
+  setTimeout(() => statusEl.textContent = '', 5000);
+});
+
+document.getElementById('reset').addEventListener('click', async () => {
+  await fetch('/api/projection_align/reset', { method: 'POST' });
+  align = { x_offset: 0, x_scale: 1 };
+  syncInputs(); applyTransform(); pushDraft();
+  statusEl.textContent = 'reset to identity (not yet saved)';
+  setTimeout(() => statusEl.textContent = '', 2500);
+});
+
+// Live readout of the paddle bus state so the user can see the X they're
+// currently driving — useful for "the carriage is at 1200 but the polygon
+// shows at 1180; offset needs +20".
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/paddle', { cache: 'no-store' });
+    if (!r.ok) return;
+    const s = await r.json();
+    liveEl.textContent = s.published
+      ? `carriage x_px: ${s.x_px.toFixed(1)}  →  drawn at: ${(s.x_px * align.x_scale + align.x_offset).toFixed(1)}`
+      : 'carriage x_px: — (no telemetry yet — click polygon to bind)';
+  } catch (e) { /* server reloading */ }
+}, 250);
+
+(async () => {
+  try {
+    const scene = await (await fetch('/api/editor/scene')).json();
+    if (Array.isArray(scene.projector) && scene.projector.length === 2) {
+      [projectorW, projectorH] = scene.projector;
+      setViewbox();
+    }
+  } catch (e) { /* fall back to the window-sized viewBox set above */ }
+  try {
+    const r = await fetch('/api/paddle/config');
+    if (r.ok) paddleLimits = await r.json();
+  } catch (e) {}
+  try {
+    const r = await fetch('/api/projection_align');
+    if (r.ok) align = await r.json();
+  } catch (e) {}
+  syncInputs();
+  await loadObjects();
+  applyTransform();
+})();
+</script>
+</body>
+</html>

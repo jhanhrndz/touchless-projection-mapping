@@ -1,0 +1,40 @@
+# Real device bindings. Each entry maps an `object_id` (the thing you bound a
+# polygon to in the editor) onto a driver.
+#
+# Nothing here is a secret — credentials live in `.env`, referenced by the
+# `*_env` keys below. Replace the hosts/MACs with your own.
+#
+# For a hardware-free run, use data/devices.dev.yaml instead:
+#   uv run python -m runtime --devices data/devices.dev.yaml
+
+- object_id: lamp_switch
+  type: kasa
+  label: "Lamp switch"
+  config:
+    # `kasa` drives any TP-Link Kasa device with an on/off state — a wall
+    # switch (what this demo uses), a smart plug, or a bulb. The driver only
+    # calls update/is_on/turn_on/turn_off, so they're interchangeable here.
+    host_env: SMART_SWITCH_HOST
+    username_env: KASA_USERNAME
+    password_env: KASA_PASSWORD
+    # Optional but recommended. If the IP in $SMART_SWITCH_HOST stops answering,
+    # the runtime broadcast-discovers the LAN and finds the switch by MAC
+    # instead, then caches the resolved IP in data/.kasa_cache.json
+    # (gitignored). Normal startups stay ~0ms; only DHCP drift pays the ~5s
+    # broadcast, once.
+    #
+    # Find yours with: uv run python scripts/probe_kasa_discover.py
+    mac: "AA:BB:CC:DD:EE:FF"
+
+- object_id: book_pusher
+  type: book_pusher
+  label: "Book pusher"
+  config:
+    # A Raspberry Pi running your own book-pusher service on UDP 5007.
+    # Click sends PUSH, which the service expands into forward-to-goal then
+    # return-to-home. Right-click exposes Zero / Set goal.
+    #
+    # The Pi-side service is NOT in this repo — see docs/BOOK_PUSHER.md for
+    # the three-command protocol so you can write your own.
+    host: bookshelf-pi.local
+    port: 5007

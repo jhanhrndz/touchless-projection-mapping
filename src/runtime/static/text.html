@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Text projector</title>
+<style>
+  /* Projection view — polls /api/text/draft every 250ms so anything typed
+     in /text/editor (the laptop control panel) shows up live here. URL
+     params override individual fields for standalone use without an editor.
+
+     URL params:
+       ?cursor=hide    hide the OS mouse cursor (off by default — user feedback
+                       was that hiding the cursor here was disorienting when
+                       interacting with the page)
+       ?caret=hide     hide the text caret (only matters if you click the page
+                       and start typing directly)
+       Plus: size, color, bg, weight, align, lineheight, text, placeholder
+       (anything passed in the URL overrides the draft state). */
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --size: 8vh;
+    --weight: normal;
+    --align: center;
+    --lineheight: 1.15;
+  }
+  html, body {
+    margin: 0; padding: 0; height: 100vh; width: 100vw;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  body.cursor-hidden { cursor: none; }
+
+  #stage {
+    position: relative;
+    width: 100vw; height: 100vh;
+  }
+  /* The text block is absolutely positioned so it can sit at any (x, y)
+     fraction of the viewport. translate(-50%, -50%) anchors the BLOCK CENTER
+     to (x, y) — natural feel for "drop the text here". */
+  #text {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 88vw;
+    color: var(--fg);
+    font-family: 'Futura', 'Futura PT', 'Avenir Next', 'Avenir',
+                 'Trebuchet MS', 'Century Gothic', sans-serif;
+    font-size: var(--size);
+    font-weight: var(--weight);
+    text-align: var(--align);
+    line-height: var(--lineheight);
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #text.empty::before {
+    content: attr(data-placeholder);
+    color: rgba(255,255,255,0.20);
+  }
+  /* Fire transition overlay — a small pixel grid positioned (inline left/top/
+     width/height) over just the target number, kept blocky (pixelated) for that
+     retro slide-fire look. Sits in front of the text so flames lick over it; the
+     number's crossfade underneath guarantees a clean before→after reveal. */
+  .fire-fx {
+    position: absolute;
+    pointer-events: none;
+    image-rendering: pixelated;
+    z-index: 5;
+  }
+  /* The burning glyph: only its opacity is animated, so the rest of the title
+     stays put. Inline keeps it in the exact text flow (no baseline shift). */
+  #text .fire-num { display: inline; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="text"></div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const root = document.documentElement.style;
+
+if (params.get('cursor') === 'hide') document.body.classList.add('cursor-hidden');
+
+const placeholder = params.get('placeholder') || '';
+const textEl = document.getElementById('text');
+textEl.dataset.placeholder = placeholder;
+
+// URL-param overrides take priority over the draft. Computed once at load.
+const overrides = {
+  text:        params.get('text'),
+  size:        params.get('size'),
+  color:       params.get('color'),
+  bg:          params.get('bg'),
+  weight:      params.get('weight'),
+  align:       params.get('align'),
+  line_height: params.get('lineheight'),
+  x:           params.has('x') ? parseFloat(params.get('x')) : null,
+  y:           params.has('y') ? parseFloat(params.get('y')) : null,
+};
+
+let lastDraftJson = '';
+
+// ---------- fire transition (localized to one number) ----------
+// The title stays put; only the target number (e.g. "5") burns into the next
+// one (e.g. "6"). We wrap that number in a span, overlay a SMALL Doom-fire
+// canvas sized just to that span (with headroom for flames to lick above it),
+// and crossfade only the span underneath so the swap is clean. The rest of the
+// title is never touched. `animating` suppresses the normal text re-render.
+let animating = false;
+
+// 37-entry Doom fire palette: black → red → orange → yellow → white.
+const FIRE_PAL = [
+  [7,7,7],[31,7,7],[47,15,7],[71,15,7],[87,23,7],[103,31,7],[119,31,7],
+  [143,39,7],[159,47,7],[175,63,7],[191,71,7],[199,71,7],[223,79,7],[223,87,7],
+  [223,87,7],[215,95,7],[215,95,7],[215,103,15],[207,111,15],[207,119,15],
+  [207,127,15],[207,135,23],[199,135,23],[199,143,23],[199,151,31],[191,159,31],
+  [191,159,31],[191,167,39],[191,167,39],[191,175,47],[183,175,47],[183,183,47],
+  [183,183,55],[207,207,111],[223,223,159],[239,239,199],[255,255,255],
+];
+const FIRE_MAX = FIRE_PAL.length - 1;   // 36
+
+function escHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+// Render `fullText` into `el` with the FIRST occurrence of `num` wrapped in a
+// <span class="fire-num"> so we can locate/animate just that glyph. Spaces and
+// newlines are preserved by the element's white-space:pre-wrap. Returns the span
+// (or null if `num` isn't found — caller falls back to a plain swap).
+function renderWithTarget(el, fullText, num) {
+  if (!num) { el.textContent = fullText; return null; }
+  const idx = fullText.indexOf(num);
+  if (idx < 0) { el.textContent = fullText; return null; }
+  el.innerHTML = escHtml(fullText.slice(0, idx))
+    + '<span class="fire-num">' + escHtml(fullText.slice(idx, idx + num.length)) + '</span>'
+    + escHtml(fullText.slice(idx + num.length));
+  return el.querySelector('.fire-num');
+}
+
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+// Burn `span` (showing beforeNum) into afterNum with a small fire overlay drawn
+// on `container`. Resolves when the flames die out. Leaves the span showing
+// afterNum at full opacity.
+function localizedFire(container, span, beforeNum, afterNum) {
+  return new Promise((resolve) => {
+    const cRect = container.getBoundingClientRect();
+    const r = span.getBoundingClientRect();
+    // Headroom: flames are seeded just below the glyph and lick well above it.
+    const padX = r.width * 0.7;
+    const padTop = r.height * 1.15;
+    const padBot = r.height * 0.3;
+    const left = (r.left - cRect.left) - padX;
+    const top  = (r.top  - cRect.top)  - padTop;
+    const cssW = r.width + padX * 2;
+    const cssH = r.height + padTop + padBot;
+
+    const SCALE = 4;  // px per fire cell
+    const W = Math.max(2, Math.ceil(cssW / SCALE));
+    const H = Math.max(2, Math.ceil(cssH / SCALE));
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'fire-fx';
+    canvas.width = W; canvas.height = H;
+    Object.assign(canvas.style, {
+      left: left + 'px', top: top + 'px',
+      width: cssW + 'px', height: cssH + 'px',
+    });
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(W, H);
+    const data = img.data;
+
+    const px = new Uint8Array(W * H);
+    const SRC_ROWS = Math.max(2, Math.round(H * 0.08));
+
+    span.style.opacity = '1';
+
+    const RISE = 850, RECEDE = 950, END = RISE + RECEDE;
+    const t0 = performance.now();
+    let prevT = t0;
+    let swapped = false;
+
+    function step(srcHeat) {
+      const seed = Math.round(FIRE_MAX * srcHeat);
+      for (let y = H - SRC_ROWS; y < H; y++) {
+        if (y < 0) continue;
+        for (let x = 0; x < W; x++) px[y * W + x] = seed;
+      }
+      for (let y = H - 1; y >= 1; y--) {
+        for (let x = 0; x < W; x++) {
+          const below = px[y * W + x];
+          const rr = (Math.random() * 3) | 0;   // drift -1,0,1
+          let tx = x + (rr - 1);
+          if (tx < 0) tx = 0; else if (tx >= W) tx = W - 1;
+          const v = below - (Math.random() < 0.28 ? 1 : 0);  // sparse decay → tall flames
+          px[(y - 1) * W + tx] = v < 0 ? 0 : v;
+        }
+      }
+    }
+
+    function render() {
+      for (let i = 0; i < px.length; i++) {
+        const h = px[i], c = FIRE_PAL[h], o = i * 4;
+        data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2];
+        data[o + 3] = h === 0 ? 0 : (h < 6 ? h * 42 : 255);
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function frame(now) {
+      const t = now - t0;
+      const srcHeat = t < RISE ? clamp01(t / (RISE * 0.35))
+                               : clamp01(1 - (t - RISE) / RECEDE);
+      const steps = Math.min(4, Math.max(1, Math.round((now - prevT) / 16)));
+      prevT = now;
+      for (let k = 0; k < steps; k++) step(srcHeat);
+      render();
+
+      if (t < RISE) {
+        span.style.opacity = String(clamp01(1 - (t - RISE * 0.35) / (RISE * 0.65)));
+      } else {
+        if (!swapped) { swapped = true; span.textContent = afterNum; span.style.opacity = '0'; }
+        span.style.opacity = String(clamp01((t - RISE - RECEDE * 0.2) / (RECEDE * 0.8)));
+      }
+
+      if (t < END) {
+        requestAnimationFrame(frame);
+      } else {
+        span.style.opacity = '1';
+        canvas.remove();
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// Burn the target number inside `beforeFull` → `afterFull`. beforeFull is what's
+// currently on screen (contains beforeNum); afterFull is the new resting text.
+function playFire(beforeFull, afterFull, beforeNum, afterNum) {
+  if (animating) return;  // ignore re-trigger mid-burn
+  animating = true;
+  const stage = document.getElementById('stage');
+  const span = renderWithTarget(textEl, beforeFull, beforeNum);
+  if (!span) {
+    // Couldn't locate the number — just swap the text, no fire.
+    animating = false;
+    textEl.textContent = afterFull;
+    return;
+  }
+  localizedFire(stage, span, beforeNum, afterNum).then(() => {
+    animating = false;
+    textEl.textContent = afterFull;  // back to plain text, now showing afterNum
+  });
+}
+
+let lastFireTrigger = null;  // null until first draft seen, so load never fires
+
+function apply(state) {
+  const s = {...state};
+  // Apply overrides on top.
+  for (const k in overrides) {
+    if (overrides[k] !== null && overrides[k] !== undefined && overrides[k] !== '') {
+      s[k] = overrides[k];
+    }
+  }
+
+  root.setProperty('--bg',         s.bg);
+  root.setProperty('--fg',         s.color);
+  root.setProperty('--size',       s.size);
+  root.setProperty('--weight',     s.weight);
+  root.setProperty('--align',      s.align);
+  root.setProperty('--lineheight', String(s.line_height));
+
+  // Position — x/y are 0..1 fractions of the viewport.
+  const x = Math.max(0, Math.min(1, parseFloat(s.x) || 0.5));
+  const y = Math.max(0, Math.min(1, parseFloat(s.y) || 0.5));
+  textEl.style.left = (x * 100).toFixed(3) + '%';
+  textEl.style.top  = (y * 100).toFixed(3) + '%';
+
+  // Detect a fire trigger before touching the text, so we can capture what's
+  // currently on screen (the "before" title, still showing the old number).
+  const trig = s.fire_trigger;
+  const isNewTrigger = (lastFireTrigger !== null && trig !== lastFireTrigger);
+  const beforeFull = textEl.textContent;  // current on-screen title
+
+  // While a fire transition owns the text element, don't clobber its content —
+  // let the animation drive it. Position/typography still apply. Also skip the
+  // re-render on the triggering tick so `beforeFull` stays on screen for playFire.
+  if (!animating && !isNewTrigger) {
+    textEl.textContent = s.text || '';
+    textEl.classList.toggle('empty', !(s.text && s.text.length));
+  }
+
+  // Fire trigger: a bumped nonce starts the burn. Skip the very first draft so
+  // simply opening /text doesn't fire on load.
+  if (lastFireTrigger === null) {
+    lastFireTrigger = trig;
+  } else if (isNewTrigger) {
+    lastFireTrigger = trig;
+    playFire(beforeFull, s.text || '', s.fire_before, s.fire_after);
+  }
+}
+
+async function tick() {
+  try {
+    const res = await fetch('/api/text/draft');
+    if (res.ok) {
+      const txt = await res.text();
+      if (txt !== lastDraftJson) {
+        lastDraftJson = txt;
+        apply(JSON.parse(txt));
+      }
+    }
+  } catch (e) { /* server reloading — ignore */ }
+}
+tick();
+setInterval(tick, 250);
+</script>
+</body>
+</html>

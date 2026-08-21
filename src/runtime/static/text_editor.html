@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Text projector — editor</title>
+<style>
+  :root { --panel: #242424; --text: #e6e6e6; --muted: #888; --accent: #ffaa55; --warn: #ff5555; }
+  html, body { margin: 0; padding: 0; height: 100vh; background: #1a1a1a;
+    color: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  /* Two-pane: preview on the left (draggable text on black), controls on
+     the right. The preview matches what the projector view at /text shows. */
+  #app { display: grid; grid-template-columns: 1fr 320px; height: 100vh; }
+  #preview {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    border-right: 1px solid #2a2a2a;
+    /* The CSS vars on the preview drive the rendered text — same vars as /text */
+    --bg: #000;
+    --fg: #fff;
+    --size: 6vh;            /* slightly smaller than /text default since preview is smaller */
+    --weight: normal;
+    --align: center;
+    --lineheight: 1.15;
+  }
+  #preview.live::after {
+    content: 'preview · drag the text to position';
+    position: absolute; left: 8px; top: 8px;
+    color: rgba(255,255,255,0.45); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+  #text {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 88%;
+    color: var(--fg);
+    font-family: 'Futura', 'Futura PT', 'Avenir Next', 'Avenir',
+                 'Trebuchet MS', 'Century Gothic', sans-serif;
+    font-size: var(--size);
+    font-weight: var(--weight);
+    text-align: var(--align);
+    line-height: var(--lineheight);
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    white-space: pre-wrap;
+    word-break: break-word;
+    cursor: grab;
+    /* Outline only on hover/drag — keeps the preview clean otherwise. */
+    outline: 1px dashed rgba(255,255,255,0);
+    outline-offset: 4px;
+    transition: outline-color 100ms;
+    user-select: none;
+  }
+  #text:hover { outline-color: rgba(255,170,85,0.4); }
+  #text.dragging { cursor: grabbing; outline-color: var(--accent); }
+  #text.empty::before {
+    content: attr(data-placeholder);
+    color: rgba(255,255,255,0.30);
+  }
+  /* Fire transition overlay (preview side) — a small canvas positioned over the
+     target number; see /text for the full effect. */
+  .fire-fx {
+    position: absolute; pointer-events: none; image-rendering: pixelated; z-index: 5;
+  }
+  #text .fire-num { display: inline; }
+  button.fire { background: #4a1d0a; color: #ffd9a8; border-color: #7a3a14;
+    font-weight: bold; width: 100%; }
+  button.fire:hover { background: #5e2710; }
+
+  /* Sidebar */
+  #panel { background: var(--panel); padding: 14px; overflow-y: auto; }
+  #panel h2 { margin: 14px 0 6px; font-size: 11px; letter-spacing: 0.5px;
+    text-transform: uppercase; color: var(--muted); }
+  #panel h2:first-of-type { margin-top: 0; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .row label { color: var(--muted); font-size: 11px; min-width: 80px; }
+  input[type=text], textarea, select {
+    background: #1a1a1a; color: var(--text); border: 1px solid #444;
+    padding: 5px 8px; font-family: inherit; font-size: 12px; border-radius: 3px;
+    box-sizing: border-box; width: 100%;
+  }
+  textarea#in-text { resize: vertical; min-height: 60px; }
+  input[type=color] {
+    background: #1a1a1a; border: 1px solid #444; padding: 0;
+    width: 28px; height: 28px; border-radius: 3px; cursor: pointer;
+  }
+  input[type=number] { width: 80px; }
+  button { background: #333; color: var(--text); border: 1px solid #444;
+    padding: 6px 10px; font-family: inherit; font-size: 12px;
+    cursor: pointer; border-radius: 4px; }
+  button:hover { background: #444; }
+  button.primary { background: var(--accent); color: #1a1a1a;
+    border-color: var(--accent); font-weight: bold; }
+  .hint { color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; }
+  .pos { font-family: ui-monospace, Menlo, monospace; color: var(--muted); font-size: 11px; }
+  /* Saved presets list */
+  #saved-list li { display: flex; align-items: center; gap: 6px;
+    padding: 4px 6px; border-radius: 4px; border: 1px solid transparent;
+    margin: 2px 0; cursor: pointer; }
+  #saved-list li:hover { background: rgba(255,255,255,0.04); border-color: #333; }
+  #saved-list li .saved-name { flex: 1; color: #ccc; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #saved-list li .saved-preview { color: var(--muted); font-size: 10px;
+    max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #saved-list li .saved-del { background: transparent; color: var(--warn);
+    border: 1px solid transparent; padding: 0 6px; margin: 0; font-size: 14px;
+    border-radius: 3px; cursor: pointer; line-height: 1; }
+  #saved-list li .saved-del:hover { border-color: var(--warn); background: rgba(255,85,85,0.08); }
+  #saved-list .empty-note { color: var(--muted); font-size: 11px; padding: 4px 6px; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="preview" class="live">
+    <div id="text" data-placeholder="type in the sidebar →"></div>
+  </div>
+  <aside id="panel">
+    <div style="color:var(--muted); font-size:11px; margin-bottom:12px;">
+      Open <a href="/text" target="_blank" style="color:var(--accent)">/text</a>
+      on the projector to mirror what's drawn here.
+    </div>
+
+    <h2>Text</h2>
+    <div class="row">
+      <textarea id="in-text" placeholder="hello world" spellcheck="false"></textarea>
+    </div>
+
+    <h2>Typography</h2>
+    <div class="row">
+      <label>size</label>
+      <input type="text" id="in-size" placeholder="8vh" />
+    </div>
+    <div class="hint">use vh (% of viewport height) so it scales; 8vh ≈ big projection</div>
+    <div class="row">
+      <label>weight</label>
+      <select id="in-weight">
+        <option value="300">300 thin</option>
+        <option value="normal" selected>normal</option>
+        <option value="500">500 medium</option>
+        <option value="bold">bold</option>
+        <option value="900">900 black</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>align</label>
+      <select id="in-align">
+        <option value="left">left</option>
+        <option value="center" selected>center</option>
+        <option value="right">right</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>line-height</label>
+      <input type="number" id="in-lineheight" step="0.05" min="0.7" max="3" value="1.15" />
+    </div>
+
+    <h2>Colors</h2>
+    <div class="row">
+      <label>text</label>
+      <input type="color" id="in-color" value="#ffffff" />
+      <span class="hint" id="hint-color" style="margin:0;">#ffffff</span>
+    </div>
+    <div class="row">
+      <label>background</label>
+      <input type="color" id="in-bg" value="#000000" />
+      <span class="hint" id="hint-bg" style="margin:0;">#000000</span>
+    </div>
+
+    <h2>Position</h2>
+    <div class="row">
+      <span class="pos" id="pos-readout">drag the text on the preview →</span>
+    </div>
+    <div class="row">
+      <button id="btn-center">center</button>
+      <button id="btn-top">top</button>
+      <button id="btn-bottom">bottom</button>
+    </div>
+
+    <h2 style="margin-top:18px;">Quick presets</h2>
+    <div class="row" style="flex-wrap:wrap;">
+      <button id="preset-title">title-card</button>
+      <button id="preset-lower">lower-third</button>
+      <button id="preset-overlay">subtle overlay</button>
+    </div>
+
+    <h2 style="margin-top:18px;">🔥 Fire transition</h2>
+    <div class="row">
+      <label>before</label>
+      <input type="text" id="fire-before" value="5" />
+    </div>
+    <div class="row">
+      <label>after</label>
+      <input type="text" id="fire-after" value="6" />
+    </div>
+    <div class="row">
+      <button id="fire-go" class="fire">🔥 Burn before → after</button>
+    </div>
+    <div class="hint">burns just the <b>before</b> number where it sits in your title
+      (first match) into <b>after</b>, with a small retro fire overlay — the rest of
+      the title stays put. plays on <a href="/text" target="_blank"
+      style="color:var(--accent)">/text</a> and previews here. e.g. title
+      "proJect:&nbsp;&nbsp;5 …", before <b>5</b>, after <b>6</b>.</div>
+
+    <h2 style="margin-top:18px; display:flex; align-items:center; justify-content:space-between;">
+      <span>Saved presets</span>
+      <button id="saved-refresh" title="re-read data/text_presets.json"
+              style="background:transparent; border:1px solid #444; color:var(--muted);
+                     padding:1px 6px; margin:0; font-size:10px; border-radius:3px;">↻</button>
+    </h2>
+    <div class="row">
+      <input type="text" id="saved-name" placeholder="preset name" style="flex:1;" />
+      <button id="saved-save" class="primary">Save</button>
+    </div>
+    <div class="hint">saves text + position + typography + colors. saving with an
+      existing name overwrites.</div>
+    <ul id="saved-list" style="list-style:none; padding:0; margin:6px 0 0;"></ul>
+  </aside>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const preview = $('preview');
+const textEl  = $('text');
+const inText  = $('in-text');
+const inSize  = $('in-size');
+const inWeight = $('in-weight');
+const inAlign = $('in-align');
+const inLineHeight = $('in-lineheight');
+const inColor = $('in-color');
+const inBg    = $('in-bg');
+const hintColor = $('hint-color');
+const hintBg    = $('hint-bg');
+const posReadout = $('pos-readout');
+
+// Local mirror of the server's text_draft. We don't trust client values for
+// rendering — we trust whatever the server returns from the POST so the two
+// pages stay in lockstep.
+let state = {
+  text: '',
+  x: 0.5, y: 0.5,
+  size: '8vh',
+  color: '#ffffff',
+  bg: '#000000',
+  weight: 'normal',
+  align: 'center',
+  line_height: 1.15,
+};
+
+// ---------- fire transition (localized to one number, mirrors /text) ----------
+let animating = false;
+const FIRE_PAL = [
+  [7,7,7],[31,7,7],[47,15,7],[71,15,7],[87,23,7],[103,31,7],[119,31,7],
+  [143,39,7],[159,47,7],[175,63,7],[191,71,7],[199,71,7],[223,79,7],[223,87,7],
+  [223,87,7],[215,95,7],[215,95,7],[215,103,15],[207,111,15],[207,119,15],
+  [207,127,15],[207,135,23],[199,135,23],[199,143,23],[199,151,31],[191,159,31],
+  [191,159,31],[191,167,39],[191,167,39],[191,175,47],[183,175,47],[183,183,47],
+  [183,183,55],[207,207,111],[223,223,159],[239,239,199],[255,255,255],
+];
+const FIRE_MAX = FIRE_PAL.length - 1;
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+function escHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function renderWithTarget(el, fullText, num) {
+  if (!num) { el.textContent = fullText; return null; }
+  const idx = fullText.indexOf(num);
+  if (idx < 0) { el.textContent = fullText; return null; }
+  el.innerHTML = escHtml(fullText.slice(0, idx))
+    + '<span class="fire-num">' + escHtml(fullText.slice(idx, idx + num.length)) + '</span>'
+    + escHtml(fullText.slice(idx + num.length));
+  return el.querySelector('.fire-num');
+}
+
+function localizedFire(container, span, beforeNum, afterNum) {
+  return new Promise((resolve) => {
+    const cRect = container.getBoundingClientRect();
+    const r = span.getBoundingClientRect();
+    const padX = r.width * 0.7, padTop = r.height * 1.15, padBot = r.height * 0.3;
+    const left = (r.left - cRect.left) - padX;
+    const top  = (r.top  - cRect.top)  - padTop;
+    const cssW = r.width + padX * 2, cssH = r.height + padTop + padBot;
+    const SCALE = 4;
+    const W = Math.max(2, Math.ceil(cssW / SCALE));
+    const H = Math.max(2, Math.ceil(cssH / SCALE));
+    const canvas = document.createElement('canvas');
+    canvas.className = 'fire-fx'; canvas.width = W; canvas.height = H;
+    Object.assign(canvas.style, { left: left+'px', top: top+'px', width: cssW+'px', height: cssH+'px' });
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(W, H);
+    const dataArr = img.data;
+    const px = new Uint8Array(W * H);
+    const SRC_ROWS = Math.max(2, Math.round(H * 0.08));
+    span.style.opacity = '1';
+    const RISE = 850, RECEDE = 950, END = RISE + RECEDE;
+    const t0 = performance.now();
+    let prevT = t0;
+    let swapped = false;
+    function step(srcHeat) {
+      const seed = Math.round(FIRE_MAX * srcHeat);
+      for (let y = H - SRC_ROWS; y < H; y++) {
+        if (y < 0) continue;
+        for (let x = 0; x < W; x++) px[y * W + x] = seed;
+      }
+      for (let y = H - 1; y >= 1; y--) {
+        for (let x = 0; x < W; x++) {
+          const below = px[y * W + x];
+          const rr = (Math.random() * 3) | 0;   // drift -1,0,1
+          let tx = x + (rr - 1);
+          if (tx < 0) tx = 0; else if (tx >= W) tx = W - 1;
+          const v = below - (Math.random() < 0.28 ? 1 : 0);   // sparse decay → tall flames
+          px[(y - 1) * W + tx] = v < 0 ? 0 : v;
+        }
+      }
+    }
+    function render() {
+      for (let i = 0; i < px.length; i++) {
+        const h = px[i], c = FIRE_PAL[h], o = i * 4;
+        dataArr[o] = c[0]; dataArr[o + 1] = c[1]; dataArr[o + 2] = c[2];
+        dataArr[o + 3] = h === 0 ? 0 : (h < 6 ? h * 42 : 255);
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+    function frame(now) {
+      const t = now - t0;
+      const srcHeat = t < RISE ? clamp01(t / (RISE * 0.35)) : clamp01(1 - (t - RISE) / RECEDE);
+      const steps = Math.min(4, Math.max(1, Math.round((now - prevT) / 16)));
+      prevT = now;
+      for (let k = 0; k < steps; k++) step(srcHeat);
+      render();
+      if (t < RISE) {
+        span.style.opacity = String(clamp01(1 - (t - RISE * 0.35) / (RISE * 0.65)));
+      } else {
+        if (!swapped) { swapped = true; span.textContent = afterNum; span.style.opacity = '0'; }
+        span.style.opacity = String(clamp01((t - RISE - RECEDE * 0.2) / (RECEDE * 0.8)));
+      }
+      if (t < END) requestAnimationFrame(frame);
+      else { span.style.opacity = '1'; canvas.remove(); resolve(); }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function applyToPreview() {
+  preview.style.setProperty('--bg',         state.bg);
+  preview.style.setProperty('--fg',         state.color);
+  // Editor preview uses ~75% of the /text font size so the same numeric value
+  // (e.g. 8vh) feels roughly equivalent to the projector. vh on the preview
+  // refers to the WHOLE viewport, not the preview pane, so we leave it as-is.
+  preview.style.setProperty('--size',       state.size);
+  preview.style.setProperty('--weight',     state.weight);
+  preview.style.setProperty('--align',      state.align);
+  preview.style.setProperty('--lineheight', String(state.line_height));
+  preview.style.background = state.bg;
+
+  const x = Math.max(0, Math.min(1, state.x));
+  const y = Math.max(0, Math.min(1, state.y));
+  textEl.style.left = (x * 100).toFixed(3) + '%';
+  textEl.style.top  = (y * 100).toFixed(3) + '%';
+  if (!animating) {
+    textEl.textContent = state.text;
+    textEl.classList.toggle('empty', !state.text);
+  }
+  posReadout.textContent = `x=${(x*100).toFixed(1)}%   y=${(y*100).toFixed(1)}%`;
+  hintColor.textContent = state.color;
+  hintBg.textContent = state.bg;
+}
+
+// Throttled POST so dragging doesn't flood the server. Latest payload wins.
+let postTimer = null;
+let pendingPatch = null;
+function pushPatch(patch) {
+  Object.assign(state, patch);
+  applyToPreview();
+  pendingPatch = {...(pendingPatch || {}), ...patch};
+  if (postTimer) return;
+  postTimer = setTimeout(async () => {
+    postTimer = null;
+    const payload = pendingPatch;
+    pendingPatch = null;
+    try {
+      await fetch('/api/text/draft', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+    } catch (e) { /* ignore */ }
+    if (pendingPatch) {
+      // Trailing call — newer changes arrived during in-flight POST.
+      const next = pendingPatch; pendingPatch = null;
+      fetch('/api/text/draft', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(next)});
+    }
+  }, 80);
+}
+
+// ---------- inputs ----------
+inText.addEventListener('input',  () => pushPatch({text: inText.value}));
+inSize.addEventListener('input',  () => pushPatch({size: inSize.value.trim() || '8vh'}));
+inWeight.addEventListener('change', () => pushPatch({weight: inWeight.value}));
+inAlign.addEventListener('change',  () => pushPatch({align: inAlign.value}));
+inLineHeight.addEventListener('input', () => pushPatch({line_height: parseFloat(inLineHeight.value) || 1.15}));
+inColor.addEventListener('input', () => pushPatch({color: inColor.value}));
+inBg.addEventListener('input',    () => pushPatch({bg: inBg.value}));
+
+// ---------- dragging the text in the preview ----------
+let drag = null;
+textEl.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const rect = preview.getBoundingClientRect();
+  drag = {
+    rect,
+    startX: e.clientX, startY: e.clientY,
+    startFracX: state.x, startFracY: state.y,
+  };
+  textEl.classList.add('dragging');
+  try { textEl.setPointerCapture(e.pointerId); } catch (_) {}
+});
+window.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.startX) / drag.rect.width;
+  const dy = (e.clientY - drag.startY) / drag.rect.height;
+  pushPatch({
+    x: Math.max(0, Math.min(1, drag.startFracX + dx)),
+    y: Math.max(0, Math.min(1, drag.startFracY + dy)),
+  });
+});
+window.addEventListener('pointerup', () => {
+  if (!drag) return;
+  drag = null;
+  textEl.classList.remove('dragging');
+});
+
+// ---------- position shortcuts ----------
+$('btn-center').addEventListener('click', () => pushPatch({x: 0.5, y: 0.5}));
+$('btn-top').addEventListener('click',    () => pushPatch({x: 0.5, y: 0.15}));
+$('btn-bottom').addEventListener('click', () => pushPatch({x: 0.5, y: 0.85}));
+
+// ---------- fire transition trigger ----------
+// Bump fire_trigger on the server (so /text plays the wipe) and also run it
+// locally in the preview. The resting text becomes "after" so both pages settle
+// on the new value once the flames die.
+$('fire-go').addEventListener('click', () => {
+  if (animating) return;
+  const before = $('fire-before').value;
+  const after  = $('fire-after').value;
+  const curText = state.text || '';
+  if (before && curText.indexOf(before) < 0) {
+    alert('"' + before + '" is not in your title text, so there is nothing to burn.\n' +
+          'Put the before-number in the title (e.g. "proJect:       5"), then burn 5 → 6.');
+    return;
+  }
+  // New resting title: first occurrence of the number swapped.
+  const newText = before ? curText.replace(before, after) : curText;
+  // Guard first so the patch below can't flash the new text before the burn.
+  animating = true;
+  // Push trigger + new resting text so /text burns the number and settles on it.
+  pushPatch({ fire_before: before, fire_after: after, fire_trigger: Date.now(), text: newText });
+  inText.value = newText;
+  // Local preview: render the BEFORE title with the number wrapped, burn just it.
+  const span = renderWithTarget(textEl, curText, before);
+  if (!span) { animating = false; applyToPreview(); return; }
+  localizedFire(preview, span, before, after).then(() => {
+    animating = false;
+    applyToPreview();  // back to plain text, now showing the after-number
+  });
+});
+
+// ---------- quick presets ----------
+$('preset-title').addEventListener('click', () => pushPatch({
+  size: '12vh', weight: 'bold', align: 'center', x: 0.5, y: 0.5,
+  color: '#ffffff', bg: '#000000',
+}));
+$('preset-lower').addEventListener('click', () => pushPatch({
+  size: '6vh', weight: 'normal', align: 'center', x: 0.5, y: 0.82,
+}));
+$('preset-overlay').addEventListener('click', () => pushPatch({
+  size: '4vh', weight: '300', align: 'left', x: 0.05, y: 0.92,
+  color: '#cccccc',
+}));
+
+// ---------- saved presets (named, persisted configs) ----------
+//
+// Backed by /api/text/presets — GET/POST/DELETE. Saves the FULL state
+// (text + position + typography + colors). Click a row to load; small × to
+// delete. Saving with an existing name overwrites.
+
+async function refreshSavedPresets() {
+  const list = document.getElementById('saved-list');
+  try {
+    const res = await fetch('/api/text/presets');
+    if (!res.ok) { list.innerHTML = '<div class="empty-note">load failed</div>'; return; }
+    const presets = await res.json();
+    list.innerHTML = '';
+    if (presets.length === 0) {
+      list.innerHTML = '<div class="empty-note">no saved presets yet</div>';
+      return;
+    }
+    // Most-recently updated first.
+    presets.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    for (const p of presets) list.appendChild(buildSavedRow(p));
+  } catch (e) {
+    list.innerHTML = '<div class="empty-note">fetch failed: ' + e.message + '</div>';
+  }
+}
+
+function buildSavedRow(p) {
+  const li = document.createElement('li');
+  const when = p.updated ? new Date(p.updated * 1000).toLocaleString() : '';
+  li.title = `${p.name} — saved ${when}`;
+
+  const name = document.createElement('div');
+  name.className = 'saved-name';
+  name.textContent = p.name;
+  li.appendChild(name);
+
+  const preview = document.createElement('div');
+  preview.className = 'saved-preview';
+  preview.textContent = (p.config && p.config.text) ? `"${p.config.text}"` : '(no text)';
+  li.appendChild(preview);
+
+  const del = document.createElement('button');
+  del.className = 'saved-del';
+  del.textContent = '×';
+  del.title = 'delete this preset';
+  del.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete preset "${p.name}"?`)) return;
+    await fetch('/api/text/presets/' + encodeURIComponent(p.name), {method: 'DELETE'});
+    refreshSavedPresets();
+  });
+  li.appendChild(del);
+
+  li.addEventListener('click', () => loadSavedPreset(p));
+  return li;
+}
+
+async function saveCurrentAsPreset() {
+  const nameInput = document.getElementById('saved-name');
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+  // Pull EVERYTHING the server allows so loading reproduces the look exactly.
+  const config = {
+    text: state.text,
+    x: state.x, y: state.y,
+    size: state.size, color: state.color, bg: state.bg,
+    weight: state.weight, align: state.align,
+    line_height: state.line_height,
+  };
+  try {
+    const res = await fetch('/api/text/presets', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, config}),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      alert('save failed: ' + err);
+      return;
+    }
+    nameInput.value = '';
+    refreshSavedPresets();
+  } catch (e) { alert('save failed: ' + e.message); }
+}
+
+function loadSavedPreset(p) {
+  if (!p.config) return;
+  // Patch via the normal pushPatch path so the projection view + preview both
+  // update through the same throttled POST stream.
+  pushPatch({...p.config});
+  // Also reflect the loaded values in the sidebar inputs.
+  inText.value     = state.text;
+  inSize.value     = state.size;
+  inWeight.value   = state.weight;
+  inAlign.value    = state.align;
+  inLineHeight.value = state.line_height;
+  inColor.value    = state.color;
+  inBg.value       = state.bg;
+}
+
+document.getElementById('saved-save').addEventListener('click', saveCurrentAsPreset);
+document.getElementById('saved-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveCurrentAsPreset(); }
+});
+document.getElementById('saved-refresh').addEventListener('click', refreshSavedPresets);
+
+// ---------- bootstrap: pull current state from server, populate inputs ----------
+(async () => {
+  try {
+    const res = await fetch('/api/text/draft');
+    if (res.ok) {
+      const got = await res.json();
+      state = {...state, ...got};
+    }
+  } catch (e) { /* fall back to defaults */ }
+
+  inText.value     = state.text;
+  inSize.value     = state.size;
+  inWeight.value   = state.weight;
+  inAlign.value    = state.align;
+  inLineHeight.value = state.line_height;
+  inColor.value    = state.color;
+  inBg.value       = state.bg;
+  applyToPreview();
+  refreshSavedPresets();  // fire-and-forget — list populates after first paint
+})();
+</script>
+</body>
+</html>

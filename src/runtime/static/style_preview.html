@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Projection preview · sandbox</title>
+<style>
+  /* ====================================================================
+     This page mirrors runtime.html's rendering so the preview matches the
+     wall exactly. Hover/click handlers are LOCAL — no WebSocket, no device
+     dispatch. The data source is the /api/style/draft channel that the
+     /style inspector pushes to, polled every 250ms.
+
+     Visual styles below are kept in sync with runtime.html by hand. If you
+     change a CSS rule here, change it there too (or extract to a shared
+     stylesheet — see plan).
+     ==================================================================== */
+
+  /* ---------- base ---------- */
+  html, body {
+    margin: 0; padding: 0;
+    background: black;
+    overflow: hidden;
+    height: 100vh;
+    color: white;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  svg#overlay { display: block; width: 100vw; height: 100vh; }
+  polygon.obj { pointer-events: all; cursor: crosshair; }
+
+  /* Occluder mirror — same !important defenses as runtime.html. */
+  polygon.obj.occluder,
+  polygon.obj.occluder:hover {
+    fill: #000 !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+    filter: none !important;
+    animation: none !important;
+    cursor: none;
+  }
+
+  text.label {
+    fill: white;
+    font-size: 14px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 160ms;
+  }
+  polygon.obj:hover + text.label { opacity: 0.85; }
+  polygon.obj.occluder + text.label { display: none; }
+
+  /* ---------- per-object animation params (mirror of runtime.html) ---------- */
+  polygon.obj {
+    --obj-intensity: 1;
+    --obj-speed: 1;
+  }
+  /* Mirror of runtime.html: CSS variables let JS write per-object idle
+     overrides without using inline style="fill: ..." (which would defeat
+     the fx-* :hover rules due to inline-style specificity). */
+  polygon.obj {
+    fill: var(--ap-fill, rgba(255, 255, 255, 0));
+    stroke: var(--ap-stroke, rgba(255, 255, 255, 0.10));
+    stroke-opacity: var(--ap-stroke-opacity, 1);
+    stroke-width: var(--ap-stroke-width, 1);
+    stroke-dasharray: var(--ap-stroke-dash, none);
+    transition:
+      fill          180ms ease-out,
+      fill-opacity  180ms ease-out,
+      stroke        180ms ease-out,
+      stroke-opacity 180ms ease-out,
+      stroke-width  180ms ease-out,
+      filter        180ms ease-out;
+  }
+  polygon.obj.fx-ember { stroke-width: 0; }
+
+  polygon.obj.fx-glow:hover, polygon.obj.fx-glow.hovered {
+    fill: var(--obj-color, #ffc864);
+    fill-opacity: var(--obj-fill-opacity, calc(0.18 * var(--obj-intensity)));
+    stroke: var(--obj-color, #ffc864);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 3;
+    filter: drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ffb450))
+            drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff8c28));
+  }
+  polygon.obj.fx-pulse:hover, polygon.obj.fx-pulse.hovered {
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 calc(8px * var(--obj-intensity)) var(--obj-color, #78dcff));
+  }
+  polygon.pulse-ring {
+    pointer-events: none;
+    fill: none;
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: 0;
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes pulse-ring {
+    0%   { stroke-opacity: 0.85; transform: scale(1.0); }
+    100% { stroke-opacity: 0;    transform: scale(1.35); }
+  }
+  polygon.pulse-ring.active {
+    animation: pulse-ring calc(1.4s / var(--obj-speed, 1)) ease-out infinite;
+  }
+  polygon.obj.fx-aurora:hover, polygon.obj.fx-aurora.hovered {
+    stroke: url(#aurora-gradient);
+    stroke-width: 4;
+    fill: rgba(120, 80, 200, 0.10);
+    fill-opacity: var(--obj-fill-opacity, calc(0.10 * var(--obj-intensity)));
+    filter: drop-shadow(0 0 calc(10px * var(--obj-intensity)) rgba(160,80,255,0.55))
+            drop-shadow(0 0 calc(22px * var(--obj-intensity)) rgba(80,200,255,0.35));
+  }
+  @keyframes aurora-shift {
+    0%   { stop-color: #ff66cc; }
+    33%  { stop-color: #66ccff; }
+    66%  { stop-color: #aaff66; }
+    100% { stop-color: #ff66cc; }
+  }
+  #aurora-stop-1 { animation: aurora-shift 6s linear infinite; }
+  #aurora-stop-2 { animation: aurora-shift 6s linear infinite; animation-delay: -2s; }
+  #aurora-stop-3 { animation: aurora-shift 6s linear infinite; animation-delay: -4s; }
+
+  polygon.obj.fx-bloom:hover, polygon.obj.fx-bloom.hovered {
+    fill: url(#bloom-gradient);
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-opacity: calc(0.6 * var(--obj-intensity));
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 calc(14px * var(--obj-intensity)) rgba(255,255,200,0.55));
+    animation: bloom-breath calc(2.4s / var(--obj-speed, 1)) ease-in-out infinite;
+  }
+  @keyframes bloom-breath {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255,255,200,0.35)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255,255,200,0.85)); }
+  }
+  polygon.obj.fx-ants:hover, polygon.obj.fx-ants.hovered {
+    fill: rgba(255, 255, 255, 0.05);
+    fill-opacity: var(--obj-fill-opacity, calc(0.05 * var(--obj-intensity)));
+    stroke: var(--obj-color, white);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2;
+    stroke-dasharray: 8 6;
+    animation: ants calc(0.8s / var(--obj-speed, 1)) linear infinite;
+  }
+  @keyframes ants {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -28; }
+  }
+  polygon.obj.fx-ember:hover, polygon.obj.fx-ember.hovered {
+    stroke: var(--obj-color, #ff8c3c);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 2;
+    filter:
+      drop-shadow(0 0 calc(4px  * var(--obj-intensity)) var(--obj-color, #ffa050))
+      drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ff7828))
+      drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff5014));
+  }
+
+  /* ---------- preview-only chrome ---------- */
+  #preview-badge {
+    position: fixed; left: 10px; top: 8px;
+    background: rgba(255, 170, 85, 0.18);
+    color: #ffaa55;
+    border: 1px solid rgba(255, 170, 85, 0.5);
+    padding: 4px 10px; border-radius: 4px;
+    font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #status {
+    position: fixed; right: 8px; bottom: 6px;
+    color: #444; font-size: 11px;
+    pointer-events: none;
+    transition: color 150ms;
+  }
+  /* Click feedback must survive a glance away — bright while flashing. */
+  #status.flash { color: #ffc864; }
+  /* "All idle" preview mode: suppress pointer events so the browser-native
+     :hover never fires. Combined with no JS .hovered class on any polygon,
+     this matches the wall's untouched-by-mouse state. */
+  body.preview-all-idle polygon.obj { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="preview-badge">preview · simulated · not touching wall</div>
+<div id="status">loading…</div>
+<svg id="overlay" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <linearGradient id="aurora-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop id="aurora-stop-1" offset="0%"   stop-color="#ff66cc" />
+      <stop id="aurora-stop-2" offset="50%"  stop-color="#66ccff" />
+      <stop id="aurora-stop-3" offset="100%" stop-color="#aaff66" />
+    </linearGradient>
+    <radialGradient id="bloom-gradient" cx="50%" cy="50%" r="60%">
+      <stop offset="0%"   stop-color="rgba(255,250,200,0.55)" />
+      <stop offset="60%"  stop-color="rgba(255,200,100,0.18)" />
+      <stop offset="100%" stop-color="rgba(255,150, 50,0.0)" />
+    </radialGradient>
+  </defs>
+</svg>
+<script>
+const EFFECTS = ['glow', 'pulse', 'aurora', 'bloom', 'ants', 'ember'];
+const DASH_PATTERNS = { solid: 'none', dashed: '8 6', dotted: '2 4' };
+const FIT_PRESERVE = { cover: 'xMidYMid slice', contain: 'xMidYMid meet', stretch: 'none' };
+const params = new URLSearchParams(location.search);
+const defaultEffect = EFFECTS.includes(params.get('effect')) ? params.get('effect') : 'glow';
+
+const svg = document.getElementById('overlay');
+const status = document.getElementById('status');
+// Design space = the projector rectangle from /api/editor/scene — the same
+// source / and /editor use, so "renders like /" stays true at any window
+// size. Deriving it from window.innerWidth/Height instead would push every
+// polygon off-canvas in a window smaller than the projector (and produce a
+// 0x0 viewBox in a background tab). Window size is only the fallback if the
+// fetch fails.
+let projectorW = window.innerWidth;
+let projectorH = window.innerHeight;
+let renderedVersion = -1;
+
+function setViewbox() {
+  svg.setAttribute('viewBox', `0 0 ${projectorW} ${projectorH}`);
+}
+setViewbox();
+(async () => {
+  try {
+    const scene = await (await fetch('/api/editor/scene')).json();
+    if (Array.isArray(scene.projector) && scene.projector.length === 2) {
+      [projectorW, projectorH] = scene.projector;
+      setViewbox();
+    }
+  } catch (e) { /* fall back to the window-sized viewBox set above */ }
+})();
+
+// Clicks are inert here by design; surface each one in the status corner so
+// the feedback is visible without opening DevTools. (The terminal belongs to
+// the real / page — this page never reaches the server's device layer.)
+let statusBase = '';
+let statusFlashTimer = null;
+function flashStatus(msg) {
+  status.textContent = msg;
+  status.classList.add('flash');
+  clearTimeout(statusFlashTimer);
+  statusFlashTimer = setTimeout(() => {
+    status.textContent = statusBase;
+    status.classList.remove('flash');
+  }, 4000);
+}
+
+// Hex + opacity → rgba string. Mirrors runtime.html.
+function rgbaFromHex(hex, opacity) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+function polygonBbox(points) {
+  const xs = points.map(p => p[0]);
+  const ys = points.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+// Per-object hover sound cache (mirror of runtime.html). One Audio element
+// per object id, restarted from 0 on every hover. Autoplay quirk: any click
+// on the page unlocks audio; the inspector's Preview button counts. play()
+// rejections (including the autoplay block) go to console.warn.
+const audioCache = new Map();
+
+// Click animation dispatch (mirror of runtime.html). Same generative
+// loading-bar overlay — purely visual, no device dispatch since this is
+// the sandbox preview.
+function playClickAnimation(svgEl, ns, obj, click) {
+  if (!click || !click.effect) return;
+  if (click.effect === 'loading_bar') playLoadingBar(svgEl, ns, obj, click);
+}
+
+function playLoadingBar(svgEl, ns, obj, click) {
+  const color = click.color || '#ffffff';
+  const duration = typeof click.duration_ms === 'number' ? click.duration_ms : 1500;
+  const polygon = obj.polygon || obj.points;
+  const xs = polygon.map(p => p[0]);
+  const ys = polygon.map(p => p[1]);
+  const bx = Math.min(...xs), by = Math.min(...ys);
+  const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
+  // bbox-relative geometry — see runtime.html for the rationale + defaults.
+  const xFrac = typeof click.x === 'number' ? click.x : 0.5;
+  const yFrac = typeof click.y === 'number' ? click.y : 0.5;
+  const wFrac = typeof click.width === 'number' ? click.width : 0.85;
+  const barW = bw * wFrac;
+  const barH = typeof click.height === 'number'
+    ? bh * click.height
+    : Math.min(bh * 0.18, 22);
+  const cx = bx + bw * xFrac;
+  const cy = by + bh * yFrac;
+  const barX = cx - barW / 2;
+  const barY = cy - barH / 2;
+
+  const g = document.createElementNS(ns, 'g');
+  g.setAttribute('pointer-events', 'none');
+  g.setAttribute('class', 'click-anim loading-bar');
+
+  const outer = document.createElementNS(ns, 'rect');
+  outer.setAttribute('x', barX); outer.setAttribute('y', barY);
+  outer.setAttribute('width', barW); outer.setAttribute('height', barH);
+  outer.setAttribute('fill', 'none');
+  outer.setAttribute('stroke', color);
+  outer.setAttribute('stroke-width', 1.5);
+  g.appendChild(outer);
+
+  const inner = document.createElementNS(ns, 'rect');
+  inner.setAttribute('x', barX); inner.setAttribute('y', barY);
+  inner.setAttribute('width', 0); inner.setAttribute('height', barH);
+  inner.setAttribute('fill', color);
+  g.appendChild(inner);
+
+  svgEl.appendChild(g);
+
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    inner.setAttribute('width', barW * t);
+    if (t < 1) requestAnimationFrame(step);
+    else setTimeout(() => g.remove(), 200);
+  }
+  requestAnimationFrame(step);
+}
+
+function playObjectSound(objId, sound) {
+  if (!sound || !sound.src) return;
+  let el = audioCache.get(objId);
+  if (!el || el.dataset.src !== sound.src) {
+    el = new Audio('/' + sound.src);
+    el.dataset.src = sound.src;
+    el.preload = 'auto';
+    audioCache.set(objId, el);
+  }
+  el.volume = typeof sound.gain === 'number' ? sound.gain : 1;
+  el.currentTime = 0;
+  const promise = el.play();
+  if (promise && typeof promise.catch === 'function') {
+    promise.catch(err => console.warn('[sound]', err.name, err.message, sound.src));
+  }
+}
+
+function renderObjectImage(svg, ns, obj, image) {
+  const bb = polygonBbox(obj.polygon);
+  const clipId = `appearance-clip-${obj.id}`;
+  const clipPath = document.createElementNS(ns, 'clipPath');
+  clipPath.setAttribute('id', clipId);
+  const clipPoly = document.createElementNS(ns, 'polygon');
+  clipPoly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+  clipPath.appendChild(clipPoly);
+  svg.appendChild(clipPath);
+
+  const img = document.createElementNS(ns, 'image');
+  img.setAttribute('href', '/' + image.src);
+  img.setAttribute('x', bb.x);
+  img.setAttribute('y', bb.y);
+  img.setAttribute('width', bb.w);
+  img.setAttribute('height', bb.h);
+  img.setAttribute('preserveAspectRatio', FIT_PRESERVE[image.fit] || 'xMidYMid slice');
+  img.setAttribute('clip-path', `url(#${clipId})`);
+  img.setAttribute('pointer-events', 'none');
+  if (typeof image.opacity === 'number') img.setAttribute('opacity', image.opacity);
+  svg.appendChild(img);
+}
+
+// Remove every dynamic child so we can re-render from the latest draft.
+// Preserves the <defs> with gradients (idempotent on every redraw).
+function clearOverlay() {
+  for (const el of [...svg.querySelectorAll('polygon, image, clipPath, text')]) {
+    el.remove();
+  }
+}
+
+// Build all polygons from the draft's `objects` list. Mirrors the relevant
+// pieces of runtime.html's loadObjects(), minus the WebSocket dispatch.
+// `objects` here uses the draft schema: `points` and `polygon` are both
+// supported because the editor pushes `points` and the seed uses `polygon`.
+function renderObjects(objects, activeId, previewMode) {
+  // Body class drives the "all idle" CSS rule that disables pointer events.
+  document.body.classList.toggle('preview-all-idle', previewMode === 'all_idle');
+  clearOverlay();
+  const ns = 'http://www.w3.org/2000/svg';
+  let visible = 0;
+  // Occluders first so normal polygons drawn over them get clicks and
+  // hover effects. Mirrors the same partitioning in runtime.html.
+  const ordered = [
+    ...objects.filter(o => o.style === 'occluder'),
+    ...objects.filter(o => o.style !== 'occluder'),
+  ];
+  for (const obj of ordered) {
+    const polygon = obj.polygon || obj.points;
+    if (!polygon || polygon.length < 3) continue;
+    visible++;
+    const isOccluder = obj.style === 'occluder';
+    const a = obj.animation || {};
+    const ap = obj.appearance || {};
+    const polyEffect = EFFECTS.includes(a.effect) ? a.effect : defaultEffect;
+
+    if (!isOccluder && ap.image && ap.image.src) {
+      renderObjectImage(svg, ns, { id: obj.id, polygon }, ap.image);
+    }
+
+    const poly = document.createElementNS(ns, 'polygon');
+    let cls = 'obj';
+    if (isOccluder) cls += ' occluder';
+    else cls += ' fx-' + polyEffect;
+    // Active-hovered mode bakes the .hovered class onto the active polygon
+    // so the user sees the highlight effect without mousing over.
+    if (previewMode === 'active_hovered' && !isOccluder && obj.id === activeId) {
+      cls += ' hovered';
+    }
+    poly.setAttribute('class', cls);
+    poly.setAttribute('points', polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+    poly.setAttribute('data-id', obj.id);
+
+    const styleParts = [];
+    if (a.color)                          styleParts.push(`--obj-color: ${a.color}`);
+    if (typeof a.intensity === 'number')  styleParts.push(`--obj-intensity: ${a.intensity}`);
+    if (typeof a.speed     === 'number')  styleParts.push(`--obj-speed: ${a.speed}`);
+    if (typeof a.fill_opacity === 'number') styleParts.push(`--obj-fill-opacity: ${a.fill_opacity}`);
+    if (!isOccluder && ap.outline) {
+      const op = ap.outline.opacity != null ? ap.outline.opacity : 1;
+      if (ap.outline.color != null) {
+        styleParts.push(`--ap-stroke: ${rgbaFromHex(ap.outline.color, op)}`);
+      } else if (ap.outline.opacity != null) {
+        styleParts.push(`--ap-stroke-opacity: ${op}`);
+      }
+      if (ap.outline.width != null) styleParts.push(`--ap-stroke-width: ${ap.outline.width}`);
+      if (ap.outline.dash) {
+        styleParts.push(`--ap-stroke-dash: ${DASH_PATTERNS[ap.outline.dash] || 'none'}`);
+      }
+    }
+    if (!isOccluder && ap.fill && (ap.fill.color != null || ap.fill.opacity != null)) {
+      const color = ap.fill.color || '#ffffff';
+      const op = ap.fill.opacity != null ? ap.fill.opacity : 0;
+      styleParts.push(`--ap-fill: ${rgbaFromHex(color, op)}`);
+    }
+    if (styleParts.length) poly.setAttribute('style', styleParts.join('; '));
+
+    if (!isOccluder) {
+      // Local-only feedback. No WebSocket, no device dispatch.
+      // Console-log on click so we can preview future click-behavior
+      // wiring without spamming the UI; the user asked for option (c).
+      poly.addEventListener('mouseenter', () => {
+        for (const r of document.querySelectorAll(`polygon.pulse-ring[data-for="${CSS.escape(obj.id)}"]`)) {
+          r.classList.add('active');
+        }
+        if (obj.sound && obj.sound.src) playObjectSound(obj.id, obj.sound);
+      });
+      poly.addEventListener('mouseleave', () => {
+        for (const r of document.querySelectorAll(`polygon.pulse-ring[data-for="${CSS.escape(obj.id)}"]`)) {
+          r.classList.remove('active');
+        }
+      });
+      poly.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const targetId = obj.device_id || obj.id;
+        const msg = `[preview] left-click ${obj.id}` + (obj.device_id ? ` → would dispatch to device ${obj.device_id}` : ' (no device bound)');
+        console.log(msg);
+        flashStatus(msg);
+        // Visual feedback fires in the sandbox even though no device dispatch
+        // happens — that's the point of preview.
+        if (obj.click && obj.click.effect) playClickAnimation(svg, ns, obj, obj.click);
+        if (obj.click && obj.click.sound && obj.click.sound.src) {
+          playObjectSound(obj.id + ':click', obj.click.sound);
+        }
+      });
+      poly.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        const targetId = obj.device_id || obj.id;
+        const msg = `[preview] right-click ${obj.id}` + (obj.device_id ? ` → would open device menu for ${obj.device_id}` : ' (no device bound)');
+        console.log(msg);
+        flashStatus(msg);
+      });
+    } else {
+      poly.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    }
+    svg.appendChild(poly);
+
+    const apLabel = ap.label || {};
+    const labelText = apLabel.text != null ? apLabel.text : obj.label;
+    if (labelText && !isOccluder && !apLabel.hidden) {
+      const bb = polygonBbox(polygon);
+      const lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('class', 'label');
+      lbl.setAttribute('x', bb.x + bb.w / 2);
+      lbl.setAttribute('y', bb.y - 8);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.textContent = labelText;
+      svg.appendChild(lbl);
+    }
+
+    if (polyEffect === 'pulse' && !isOccluder) {
+      const ring = document.createElementNS(ns, 'polygon');
+      // In active_hovered mode the ring starts already pulsing on the
+      // active object so the user sees the effect immediately.
+      let ringCls = 'pulse-ring';
+      if (previewMode === 'active_hovered' && obj.id === activeId) ringCls += ' active';
+      ring.setAttribute('class', ringCls);
+      ring.setAttribute('points', polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+      ring.setAttribute('data-for', obj.id);
+      svg.appendChild(ring);
+    }
+  }
+  statusBase = `${visible} object${visible === 1 ? '' : 's'} · ${projectorW}x${projectorH}`;
+  status.textContent = statusBase;
+}
+
+// Poll the style draft for updates. 250ms balances responsiveness against
+// CPU on the laptop running the inspector + preview side-by-side.
+async function pollDraft() {
+  try {
+    const res = await fetch('/api/style/draft');
+    if (!res.ok) throw new Error(`${res.status}`);
+    const draft = await res.json();
+    const ver = typeof draft.version === 'number' ? draft.version : 0;
+    if (ver !== renderedVersion) {
+      renderedVersion = ver;
+      const mode = draft.preview_mode || 'active_hovered';
+      renderObjects(draft.objects || [], draft.active_id || null, mode);
+    }
+  } catch (e) {
+    status.textContent = `error: ${e.message}`;
+  }
+}
+pollDraft();
+setInterval(pollDraft, 250);
+</script>
+</body>
+</html>

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Animation tuner</title>
+<style>
+  :root { --bg: #1a1a1a; --panel: #242424; --text: #e6e6e6; --muted: #888; --accent: #ffaa55; --warn: #ff5555; }
+  html, body { margin: 0; padding: 0; height: 100vh; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, Menlo, monospace; font-size: 13px; overflow: hidden; }
+
+  #app { display: grid; grid-template-rows: 1fr auto; height: 100vh; }
+  #sandbox {
+    position: relative;
+    background: black;
+    overflow: hidden;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  #sandbox svg { display: block; width: 100%; height: 100%; }
+  #sandbox::after {
+    content: 'preview · effect rendered with current form values';
+    position: absolute; left: 8px; top: 8px;
+    color: rgba(255,255,255,0.45); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+  #empty-state {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.4); font-size: 13px;
+    pointer-events: none;
+  }
+
+  #controls { display: grid; grid-template-columns: 280px 1fr; height: 45vh; }
+  #obj-list-pane { background: var(--panel); padding: 12px; overflow-y: auto; border-right: 1px solid #000; }
+  #obj-list-pane h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+  ul#objlist { list-style: none; padding: 0; margin: 0; }
+  ul#objlist li { padding: 8px 10px; cursor: pointer; border-radius: 4px; border: 1px solid transparent; margin-bottom: 4px; }
+  ul#objlist li.active { border-color: var(--accent); background: rgba(255,170,85,0.08); }
+  ul#objlist li:hover { background: rgba(255,255,255,0.04); }
+  .obj-id    { color: var(--muted); font-size: 10px; }
+  .obj-label { font-weight: 500; }
+  .obj-meta  { color: var(--muted); font-size: 11px; }
+
+  #form-pane { padding: 16px 20px; overflow-y: auto; }
+  #form-pane h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+  .field { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; margin: 8px 0; }
+  .field label { color: #aaa; font-size: 12px; }
+  .field input, .field select, .field textarea {
+    background: #1a1a1a; color: var(--text); border: 1px solid #444;
+    padding: 5px 8px; font-family: inherit; font-size: 12px; border-radius: 3px;
+    width: 100%; box-sizing: border-box;
+  }
+  .field input[type="range"] { padding: 0; }
+  .field input[type="color"] { padding: 0; height: 28px; }
+  .field .val { color: var(--muted); font-size: 11px; min-width: 36px; text-align: right; }
+  .field textarea { min-height: 56px; resize: vertical; font-family: inherit; }
+
+  .controls-row { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+  button { background: #333; color: var(--text); border: 1px solid #444; padding: 7px 12px;
+    font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 4px; }
+  button:hover { background: #444; }
+  button.primary { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: bold; }
+  button.primary:hover { background: #ffbb77; }
+  button.subtle { background: transparent; }
+  a.subtle { color: var(--muted); text-decoration: none; font-size: 11px; }
+  a.subtle:hover { color: var(--accent); }
+
+  #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%);
+    background: #333; padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity 200ms;
+    pointer-events: none; }
+  #toast.show { opacity: 1; }
+
+  /* ---------- Effect rendering (mirrors runtime.html so the preview matches
+       what the projector will show). Each `polygon.obj.fx-*` rule sets the
+       hover state, simulated here by the `.hovered` class added in JS. ---------- */
+  polygon.obj {
+    --obj-intensity: 1;
+    --obj-speed: 1;
+    fill: rgba(255, 255, 255, 0);
+    stroke: rgba(255, 255, 255, 0.10);
+    stroke-width: 1;
+    transition: fill 180ms ease-out, stroke 180ms ease-out, stroke-width 180ms ease-out, filter 180ms ease-out;
+  }
+  polygon.obj.fx-ember { stroke-width: 0; }
+
+  polygon.obj.fx-glow:hover, polygon.obj.fx-glow.hovered {
+    fill: var(--obj-color, #ffc864);
+    fill-opacity: calc(0.18 * var(--obj-intensity));
+    stroke: var(--obj-color, #ffc864);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 3;
+    filter: drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ffb450))
+            drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff8c28));
+  }
+  polygon.obj.fx-pulse:hover, polygon.obj.fx-pulse.hovered {
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 calc(8px * var(--obj-intensity)) var(--obj-color, #78dcff));
+  }
+  polygon.pulse-ring {
+    pointer-events: none;
+    fill: none;
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: 0;
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes pulse-ring {
+    0%   { stroke-opacity: 0.85; transform: scale(1.0); }
+    100% { stroke-opacity: 0;    transform: scale(1.35); }
+  }
+  polygon.pulse-ring.active {
+    animation: pulse-ring calc(1.4s / var(--obj-speed, 1)) ease-out infinite;
+  }
+  polygon.obj.fx-aurora:hover, polygon.obj.fx-aurora.hovered {
+    stroke: url(#aurora-gradient);
+    stroke-width: 4;
+    fill: rgba(120, 80, 200, 0.10);
+    fill-opacity: calc(0.10 * var(--obj-intensity));
+    filter: drop-shadow(0 0 calc(10px * var(--obj-intensity)) rgba(160,80,255,0.55))
+            drop-shadow(0 0 calc(22px * var(--obj-intensity)) rgba(80,200,255,0.35));
+  }
+  @keyframes aurora-shift {
+    0% { stop-color: #ff66cc; } 33% { stop-color: #66ccff; }
+    66% { stop-color: #aaff66; } 100% { stop-color: #ff66cc; }
+  }
+  #aurora-stop-1 { animation: aurora-shift 6s linear infinite; }
+  #aurora-stop-2 { animation: aurora-shift 6s linear infinite; animation-delay: -2s; }
+  #aurora-stop-3 { animation: aurora-shift 6s linear infinite; animation-delay: -4s; }
+
+  polygon.obj.fx-bloom:hover, polygon.obj.fx-bloom.hovered {
+    fill: url(#bloom-gradient);
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-opacity: calc(0.6 * var(--obj-intensity));
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 calc(14px * var(--obj-intensity)) rgba(255,255,200,0.55));
+    animation: bloom-breath calc(2.4s / var(--obj-speed, 1)) ease-in-out infinite;
+  }
+  @keyframes bloom-breath {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255,255,200,0.35)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255,255,200,0.85)); }
+  }
+
+  polygon.obj.fx-ants:hover, polygon.obj.fx-ants.hovered {
+    fill: rgba(255, 255, 255, 0.05);
+    fill-opacity: calc(0.05 * var(--obj-intensity));
+    stroke: var(--obj-color, white);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2;
+    stroke-dasharray: 8 6;
+    animation: ants calc(0.8s / var(--obj-speed, 1)) linear infinite;
+  }
+  @keyframes ants {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -28; }
+  }
+
+  polygon.obj.fx-ember:hover, polygon.obj.fx-ember.hovered {
+    stroke: var(--obj-color, #ff8c3c);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 2;
+    filter:
+      drop-shadow(0 0 calc(4px  * var(--obj-intensity)) var(--obj-color, #ffa050))
+      drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ff7828))
+      drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff5014));
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sandbox">
+    <svg id="preview" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="aurora-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop id="aurora-stop-1" offset="0%"   stop-color="#ff66cc" />
+          <stop id="aurora-stop-2" offset="50%"  stop-color="#66ccff" />
+          <stop id="aurora-stop-3" offset="100%" stop-color="#aaff66" />
+        </linearGradient>
+        <radialGradient id="bloom-gradient" cx="50%" cy="50%" r="60%">
+          <stop offset="0%"   stop-color="rgba(255,250,200,0.55)" />
+          <stop offset="60%"  stop-color="rgba(255,200,100,0.18)" />
+          <stop offset="100%" stop-color="rgba(255,150, 50,0.0)" />
+        </radialGradient>
+      </defs>
+    </svg>
+    <div id="empty-state">No objects loaded — pick one from the list below.</div>
+  </div>
+
+  <div id="controls">
+    <aside id="obj-list-pane">
+      <h2>Objects</h2>
+      <ul id="objlist"></ul>
+      <div style="margin-top:12px; color:var(--muted); font-size:11px; line-height:1.6;">
+        <a class="subtle" href="/editor" target="_blank">edit shapes →</a><br>
+        <a class="subtle" href="/" target="_blank">open runtime →</a>
+      </div>
+    </aside>
+
+    <section id="form-pane">
+      <h2 id="active-title">No object selected</h2>
+
+      <div class="field">
+        <label>Effect</label>
+        <select id="f-effect">
+          <option value="">(use default — ?effect= URL param)</option>
+          <option value="glow">glow — warm halo</option>
+          <option value="pulse">pulse — sonar ring</option>
+          <option value="aurora">aurora — gradient (color override N/A)</option>
+          <option value="bloom">bloom — radial breath (color override N/A)</option>
+          <option value="ants">ants — marching dashes</option>
+          <option value="ember">ember — edge halo only</option>
+        </select>
+        <span></span>
+      </div>
+
+      <div class="field">
+        <label>Color</label>
+        <input id="f-color" type="color" value="#ffaa55" />
+        <button id="f-color-clear" class="subtle" title="Clear color override (use effect default)">×</button>
+      </div>
+
+      <div class="field">
+        <label>Intensity</label>
+        <input id="f-intensity" type="range" min="0" max="1" step="0.05" value="1" />
+        <span class="val" id="f-intensity-val">1.00</span>
+      </div>
+
+      <div class="field">
+        <label>Speed</label>
+        <input id="f-speed" type="range" min="0.3" max="3.0" step="0.1" value="1" />
+        <span class="val" id="f-speed-val">1.0×</span>
+      </div>
+
+      <div class="field" style="grid-template-columns: 110px 1fr;">
+        <label>Notes</label>
+        <textarea id="f-notes" placeholder="(write down ideas / things to come back to)"></textarea>
+      </div>
+
+      <div class="controls-row">
+        <button id="save" class="primary">Save to objects.json</button>
+        <button id="reset" class="subtle">Reset (use effect default)</button>
+        <span style="flex:1"></span>
+        <span id="dirty-flag" style="color:var(--muted); font-size:11px;"></span>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const EFFECTS = ['glow', 'pulse', 'aurora', 'bloom', 'ants', 'ember'];
+const COLOR_AGNOSTIC = new Set(['aurora', 'bloom']);  // color override has no visible effect
+
+let projector = [1024, 768];
+let objects = [];     // [{id, label, points, device_id, style, animation, notes}]
+let activeId = null;
+let dirty = false;
+
+const previewSvg = document.getElementById('preview');
+const objList    = document.getElementById('objlist');
+const titleEl    = document.getElementById('active-title');
+const dirtyFlag  = document.getElementById('dirty-flag');
+const toast      = document.getElementById('toast');
+const emptyState = document.getElementById('empty-state');
+
+const fEffect    = document.getElementById('f-effect');
+const fColor     = document.getElementById('f-color');
+const fColorClr  = document.getElementById('f-color-clear');
+const fIntensity = document.getElementById('f-intensity');
+const fIntensityVal = document.getElementById('f-intensity-val');
+const fSpeed     = document.getElementById('f-speed');
+const fSpeedVal  = document.getElementById('f-speed-val');
+const fNotes     = document.getElementById('f-notes');
+
+function showToast(msg, ms=1400) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+async function init() {
+  // Projector dims so preview viewBox matches the real runtime.
+  try {
+    const meta = await (await fetch('/api/editor/scene')).json();
+    if (meta.projector && meta.projector.length === 2) projector = meta.projector;
+  } catch (e) { /* defaults */ }
+  previewSvg.setAttribute('viewBox', `0 0 ${projector[0]} ${projector[1]}`);
+
+  // Load objects + their current animation/notes from objects.json.
+  const data = await (await fetch('/api/objects')).json();
+  objects = data.map(o => ({
+    id: o.id,
+    label: o.label || '',
+    polygon: o.polygon || [],
+    device_id: o.device_id || null,
+    style: o.style === 'occluder' ? 'occluder' : 'normal',
+    animation: o.animation || {},
+    notes: o.notes || '',
+  }));
+  // Filter out occluders — they don't have hover effects to tune.
+  if (objects.length) activeId = (objects.find(o => o.style !== 'occluder') || objects[0]).id;
+  renderList();
+  loadActiveIntoForm();
+}
+
+function renderList() {
+  objList.innerHTML = '';
+  for (const obj of objects) {
+    const li = document.createElement('li');
+    li.className = obj.id === activeId ? 'active' : '';
+    const a = obj.animation || {};
+    const fxText = a.effect || '<i>(default)</i>';
+    const occluder = obj.style === 'occluder' ? ' <span style="color:#666">· occluder, no tuning</span>' : '';
+    li.innerHTML = `<div class="obj-label">${obj.label || '(unlabeled)'}</div>
+      <div class="obj-id">${obj.id}</div>
+      <div class="obj-meta">fx: ${fxText}${occluder}</div>`;
+    li.addEventListener('click', () => {
+      if (dirty && !confirm('Discard unsaved tuning changes?')) return;
+      activeId = obj.id;
+      dirty = false; updateDirtyFlag();
+      renderList();
+      loadActiveIntoForm();
+    });
+    objList.appendChild(li);
+  }
+}
+
+function activeObj() { return objects.find(o => o.id === activeId); }
+
+function loadActiveIntoForm() {
+  const obj = activeObj();
+  if (!obj) {
+    titleEl.textContent = 'No object selected';
+    emptyState.style.display = 'flex';
+    clearPreview();
+    return;
+  }
+  emptyState.style.display = 'none';
+  titleEl.textContent = obj.label ? `${obj.label}` : `(unlabeled) — ${obj.id}`;
+  const a = obj.animation || {};
+  fEffect.value = a.effect || '';
+  if (a.color) fColor.value = a.color;
+  else         fColor.value = '#ffaa55';  // default placeholder, won't be sent unless user touches it
+  fIntensity.value = a.intensity != null ? a.intensity : 1;
+  fIntensityVal.textContent = (+fIntensity.value).toFixed(2);
+  fSpeed.value = a.speed != null ? a.speed : 1;
+  fSpeedVal.textContent = (+fSpeed.value).toFixed(1) + '×';
+  fNotes.value = obj.notes || '';
+  refreshPreview();
+}
+
+function clearPreview() {
+  for (const el of previewSvg.querySelectorAll('polygon, polyline')) el.remove();
+}
+
+function refreshPreview() {
+  clearPreview();
+  const obj = activeObj();
+  if (!obj || !obj.polygon || obj.polygon.length < 3) return;
+  if (obj.style === 'occluder') {
+    // Occluder preview: solid black + dashed outline (matches editor preview).
+    const poly = document.createElementNS(SVG_NS, 'polygon');
+    poly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+    poly.setAttribute('class', 'obj occluder');
+    poly.setAttribute('style', 'fill: #000; stroke: rgba(255,255,255,0.5); stroke-width: 2; stroke-dasharray: 6 6;');
+    previewSvg.appendChild(poly);
+    return;
+  }
+
+  const effectName = formEffect();
+  const poly = document.createElementNS(SVG_NS, 'polygon');
+  poly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+  poly.setAttribute('class', `obj fx-${effectName} hovered`);
+
+  const styleParts = [];
+  const overrides = formOverrides();
+  if (overrides.color != null)     styleParts.push(`--obj-color: ${overrides.color}`);
+  if (overrides.intensity != null) styleParts.push(`--obj-intensity: ${overrides.intensity}`);
+  if (overrides.speed != null)     styleParts.push(`--obj-speed: ${overrides.speed}`);
+  if (styleParts.length) poly.setAttribute('style', styleParts.join('; '));
+  previewSvg.appendChild(poly);
+
+  // Pulse needs a sibling ring element for the expansion animation.
+  if (effectName === 'pulse') {
+    const ring = document.createElementNS(SVG_NS, 'polygon');
+    ring.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+    ring.setAttribute('class', 'pulse-ring active');
+    if (styleParts.length) ring.setAttribute('style', styleParts.join('; '));
+    previewSvg.appendChild(ring);
+  }
+}
+
+function formEffect() {
+  // Returns the effect name to use for the preview. Empty form value means
+  // "use default" — the runtime would fall back to ?effect= URL param. We
+  // preview as 'glow' (the documented default) so the user always sees something.
+  return fEffect.value || 'glow';
+}
+
+function formOverrides() {
+  // Build the animation override dict from current form state. Returns only
+  // the keys the user has explicitly set; missing keys mean "use effect default".
+  const out = {};
+  if (fEffect.value) out.effect = fEffect.value;
+  if (fColor.dataset.set === '1') out.color = fColor.value;
+  if (+fIntensity.value !== 1) out.intensity = +fIntensity.value;
+  if (+fSpeed.value !== 1)     out.speed = +fSpeed.value;
+  return out;
+}
+
+function commitFormToActive() {
+  const obj = activeObj();
+  if (!obj) return;
+  obj.animation = formOverrides();
+  obj.notes = fNotes.value;
+}
+
+function updateDirtyFlag() {
+  dirtyFlag.textContent = dirty ? '● unsaved' : '';
+  dirtyFlag.style.color = dirty ? 'var(--accent)' : 'var(--muted)';
+}
+
+function markDirty() { dirty = true; updateDirtyFlag(); }
+
+// Form change wiring. Each field updates the active object and refreshes preview.
+fEffect.addEventListener('change', () => { commitFormToActive(); markDirty(); refreshPreview(); renderList(); });
+fColor.addEventListener('input',   () => { fColor.dataset.set = '1'; commitFormToActive(); markDirty(); refreshPreview(); });
+fColorClr.addEventListener('click',() => { delete fColor.dataset.set; commitFormToActive(); markDirty(); refreshPreview(); });
+fIntensity.addEventListener('input',() => {
+  fIntensityVal.textContent = (+fIntensity.value).toFixed(2);
+  commitFormToActive(); markDirty(); refreshPreview();
+});
+fSpeed.addEventListener('input',   () => {
+  fSpeedVal.textContent = (+fSpeed.value).toFixed(1) + '×';
+  commitFormToActive(); markDirty(); refreshPreview();
+});
+fNotes.addEventListener('input',   () => { commitFormToActive(); markDirty(); });
+
+document.getElementById('reset').addEventListener('click', () => {
+  fEffect.value = '';
+  delete fColor.dataset.set;
+  fColor.value = '#ffaa55';
+  fIntensity.value = 1; fIntensityVal.textContent = '1.00';
+  fSpeed.value = 1;     fSpeedVal.textContent = '1.0×';
+  commitFormToActive(); markDirty(); refreshPreview(); renderList();
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+  // Sync form to active before serializing.
+  commitFormToActive();
+  const payload = {
+    objects: objects
+      .filter(o => o.polygon && o.polygon.length >= 3)
+      .map(o => {
+        const out = { id: o.id, label: o.label, polygon: o.polygon };
+        if (o.device_id && o.style !== 'occluder') out.device_id = o.device_id;
+        if (o.style && o.style !== 'normal') out.style = o.style;
+        if (o.animation && Object.keys(o.animation).length > 0) out.animation = o.animation;
+        if (o.notes) out.notes = o.notes;
+        return out;
+      }),
+  };
+  const res = await fetch('/api/editor/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    const j = await res.json();
+    showToast(`saved ${j.saved} objects → ${j.path}`);
+    dirty = false; updateDirtyFlag();
+  } else {
+    const err = await res.text();
+    showToast('save failed: ' + err, 2400);
+  }
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+init();
+</script>
+</body>
+</html>

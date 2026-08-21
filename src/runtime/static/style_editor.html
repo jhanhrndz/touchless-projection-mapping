@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Object style inspector</title>
+<style>
+  :root {
+    --bg: #1a1a1a; --panel: #242424; --text: #e6e6e6;
+    --muted: #888; --accent: #ffaa55; --warn: #ff5555;
+    --tab-bg: #2a2a2a;
+  }
+  html, body { margin: 0; padding: 0; height: 100vh; background: var(--bg);
+    color: var(--text); font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; overflow: hidden; }
+
+  /* ----- layout ----- */
+  #app { display: grid; grid-template-rows: 1fr 50vh; height: 100vh; }
+  #sandbox { position: relative; background: black; overflow: hidden;
+    border-bottom: 1px solid #2a2a2a; }
+  #sandbox svg { display: block; width: 100%; height: 100%; }
+  #sandbox-hint {
+    position: absolute; left: 8px; top: 8px;
+    color: rgba(255,255,255,0.45); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+  #preview-mode-pick {
+    position: absolute; right: 8px; top: 8px;
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(20,20,20,0.7);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 3px 6px 3px 8px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  #preview-mode-pick select {
+    background: transparent; color: var(--accent);
+    border: none; font-family: inherit; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    cursor: pointer; padding: 2px 4px;
+  }
+  #preview-mode-pick select:focus { outline: 1px solid var(--accent); }
+  #empty-state {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.4); font-size: 13px;
+    pointer-events: none;
+  }
+
+  #controls { display: grid; grid-template-columns: 260px 1fr; }
+  #obj-list-pane { background: var(--panel); padding: 12px; overflow-y: auto;
+    border-right: 1px solid #000; }
+  #obj-list-pane h2 { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.5px;
+    text-transform: uppercase; color: var(--muted); }
+  ul#objlist { list-style: none; padding: 0; margin: 0; }
+  ul#objlist li { padding: 7px 10px; cursor: pointer; border-radius: 4px;
+    border: 1px solid transparent; margin-bottom: 4px; }
+  ul#objlist li.active { border-color: var(--accent); background: rgba(255,170,85,0.08); }
+  ul#objlist li:hover { background: rgba(255,255,255,0.04); }
+  ul#objlist li.occluder { opacity: 0.55; }
+  .obj-id { color: var(--muted); font-size: 10px; }
+  .obj-label { font-weight: 500; }
+  .obj-meta  { color: var(--muted); font-size: 10px; margin-top: 2px; }
+
+  #form-pane { padding: 14px 20px; overflow-y: auto; display: flex; flex-direction: column; }
+  #active-title { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+  #active-sub   { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+
+  /* ----- tabs ----- */
+  #tabs { display: flex; gap: 2px; border-bottom: 1px solid #333; margin-bottom: 10px; }
+  #tabs button { background: transparent; color: var(--muted); border: none;
+    padding: 8px 14px; cursor: pointer; font-family: inherit; font-size: 12px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  #tabs button:hover { color: var(--text); }
+  #tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .tab-subtitle {
+    color: var(--muted); font-size: 11px; line-height: 1.5;
+    margin: 0 0 12px 2px; font-style: italic;
+  }
+  .tab-subtitle b { color: rgba(255,255,255,0.8); font-style: normal; font-weight: normal; }
+
+  /* ----- form fields ----- */
+  .field { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px;
+    align-items: center; margin: 8px 0; }
+  .field label { color: #aaa; font-size: 12px; }
+  .field input, .field select, .field textarea {
+    background: #1a1a1a; color: var(--text); border: 1px solid #444;
+    padding: 5px 8px; font-family: inherit; font-size: 12px; border-radius: 3px;
+    width: 100%; box-sizing: border-box;
+  }
+  .field input[type="range"] { padding: 0; }
+  .field input[type="color"] { padding: 0; height: 28px; cursor: pointer; }
+  .field .val { color: var(--muted); font-size: 11px; min-width: 36px; text-align: right; }
+  .field textarea { min-height: 56px; resize: vertical; font-family: inherit; }
+
+  .controls-row { display: flex; gap: 10px; align-items: center; margin-top: auto;
+    padding-top: 16px; border-top: 1px solid #2a2a2a; }
+  button.btn { background: #333; color: var(--text); border: 1px solid #444;
+    padding: 7px 12px; font-family: inherit; font-size: 12px; cursor: pointer;
+    border-radius: 4px; }
+  button.btn:hover { background: #444; }
+  button.btn.primary { background: var(--accent); color: #1a1a1a;
+    border-color: var(--accent); font-weight: bold; }
+  button.btn.primary:hover { background: #ffbb77; }
+  button.btn.subtle { background: transparent; color: var(--muted); }
+  button.btn.subtle:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  a.subtle { color: var(--muted); text-decoration: none; font-size: 11px; }
+  a.subtle:hover { color: var(--accent); }
+
+  #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%);
+    background: #333; padding: 8px 14px; border-radius: 6px; opacity: 0;
+    transition: opacity 200ms; pointer-events: none; z-index: 20; }
+  #toast.show { opacity: 1; }
+
+  /* ----- preview SVG: mirrors runtime.html so what-you-see-is-what-the-wall-shows -----
+     Kept in sync with runtime.html by hand. */
+  /* Mirror of runtime.html: CSS variables let JS write per-object idle
+     overrides without using inline style="fill: ..." (which would defeat
+     the fx-* :hover rules due to inline-style specificity). */
+  polygon.obj {
+    --obj-intensity: 1;
+    --obj-speed: 1;
+    fill: var(--ap-fill, rgba(255, 255, 255, 0));
+    stroke: var(--ap-stroke, rgba(255, 255, 255, 0.10));
+    stroke-opacity: var(--ap-stroke-opacity, 1);
+    stroke-width: var(--ap-stroke-width, 1);
+    stroke-dasharray: var(--ap-stroke-dash, none);
+    transition: fill 180ms, fill-opacity 180ms, stroke 180ms,
+                stroke-opacity 180ms, stroke-width 180ms, filter 180ms;
+    cursor: pointer;
+  }
+  polygon.obj.fx-ember { stroke-width: 0; }
+  polygon.obj.occluder { fill: #000 !important; stroke: none !important;
+    stroke-width: 0 !important; filter: none !important; animation: none !important; }
+  polygon.obj.fx-glow:hover, polygon.obj.fx-glow.hovered {
+    fill: var(--obj-color, #ffc864);
+    fill-opacity: var(--obj-fill-opacity, calc(0.18 * var(--obj-intensity)));
+    stroke: var(--obj-color, #ffc864);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 3;
+    filter: drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ffb450))
+            drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff8c28));
+  }
+  polygon.obj.fx-pulse:hover, polygon.obj.fx-pulse.hovered {
+    stroke: var(--obj-color, #78dcff);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 calc(8px * var(--obj-intensity)) var(--obj-color, #78dcff));
+  }
+  polygon.pulse-ring { pointer-events: none; fill: none;
+    stroke: var(--obj-color, #78dcff); stroke-opacity: 0; stroke-width: 2;
+    transform-box: fill-box; transform-origin: center; }
+  @keyframes pulse-ring {
+    0%   { stroke-opacity: 0.85; transform: scale(1.0); }
+    100% { stroke-opacity: 0;    transform: scale(1.35); }
+  }
+  polygon.pulse-ring.active {
+    animation: pulse-ring calc(1.4s / var(--obj-speed, 1)) ease-out infinite;
+  }
+  polygon.obj.fx-aurora:hover, polygon.obj.fx-aurora.hovered {
+    stroke: url(#aurora-gradient); stroke-width: 4;
+    fill: rgba(120, 80, 200, 0.10);
+    fill-opacity: var(--obj-fill-opacity, calc(0.10 * var(--obj-intensity)));
+    filter: drop-shadow(0 0 calc(10px * var(--obj-intensity)) rgba(160,80,255,0.55))
+            drop-shadow(0 0 calc(22px * var(--obj-intensity)) rgba(80,200,255,0.35));
+  }
+  @keyframes aurora-shift {
+    0% { stop-color: #ff66cc; } 33% { stop-color: #66ccff; }
+    66% { stop-color: #aaff66; } 100% { stop-color: #ff66cc; }
+  }
+  #aurora-stop-1 { animation: aurora-shift 6s linear infinite; }
+  #aurora-stop-2 { animation: aurora-shift 6s linear infinite; animation-delay: -2s; }
+  #aurora-stop-3 { animation: aurora-shift 6s linear infinite; animation-delay: -4s; }
+  polygon.obj.fx-bloom:hover, polygon.obj.fx-bloom.hovered {
+    fill: url(#bloom-gradient);
+    stroke: rgba(255, 255, 255, 0.6);
+    stroke-opacity: calc(0.6 * var(--obj-intensity));
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 calc(14px * var(--obj-intensity)) rgba(255,255,200,0.55));
+    animation: bloom-breath calc(2.4s / var(--obj-speed, 1)) ease-in-out infinite;
+  }
+  @keyframes bloom-breath {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255,255,200,0.35)); }
+    50%      { filter: drop-shadow(0 0 22px rgba(255,255,200,0.85)); }
+  }
+  polygon.obj.fx-ants:hover, polygon.obj.fx-ants.hovered {
+    fill: rgba(255, 255, 255, 0.05);
+    fill-opacity: var(--obj-fill-opacity, calc(0.05 * var(--obj-intensity)));
+    stroke: var(--obj-color, white);
+    stroke-opacity: calc(1 * var(--obj-intensity));
+    stroke-width: 2; stroke-dasharray: 8 6;
+    animation: ants calc(0.8s / var(--obj-speed, 1)) linear infinite;
+  }
+  @keyframes ants {
+    from { stroke-dashoffset: 0; } to { stroke-dashoffset: -28; }
+  }
+  polygon.obj.fx-ember:hover, polygon.obj.fx-ember.hovered {
+    stroke: var(--obj-color, #ff8c3c);
+    stroke-opacity: calc(0.95 * var(--obj-intensity));
+    stroke-width: 2;
+    filter:
+      drop-shadow(0 0 calc(4px  * var(--obj-intensity)) var(--obj-color, #ffa050))
+      drop-shadow(0 0 calc(12px * var(--obj-intensity)) var(--obj-color, #ff7828))
+      drop-shadow(0 0 calc(28px * var(--obj-intensity)) var(--obj-color, #ff5014));
+  }
+
+  /* ----- selection ring around the active object's bbox ----- */
+  rect.selection {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+    animation: selection-march 0.6s linear infinite;
+  }
+  @keyframes selection-march {
+    to { stroke-dashoffset: -14; }
+  }
+
+  text.label {
+    fill: white; font-size: 14px; pointer-events: none;
+    opacity: 0; transition: opacity 160ms;
+  }
+  polygon.obj:hover + text.label { opacity: 0.85; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sandbox">
+    <svg id="preview" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="aurora-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop id="aurora-stop-1" offset="0%"   stop-color="#ff66cc" />
+          <stop id="aurora-stop-2" offset="50%"  stop-color="#66ccff" />
+          <stop id="aurora-stop-3" offset="100%" stop-color="#aaff66" />
+        </linearGradient>
+        <radialGradient id="bloom-gradient" cx="50%" cy="50%" r="60%">
+          <stop offset="0%"   stop-color="rgba(255,250,200,0.55)" />
+          <stop offset="60%"  stop-color="rgba(255,200,100,0.18)" />
+          <stop offset="100%" stop-color="rgba(255,150, 50,0.0)" />
+        </radialGradient>
+      </defs>
+    </svg>
+    <div id="sandbox-hint">preview · click any object to select · live-mirrored to /style/preview</div>
+    <div id="preview-mode-pick">
+      Preview:
+      <select id="preview-mode">
+        <option value="active_hovered">Active object hovered</option>
+        <option value="all_idle">All idle (no highlights)</option>
+        <option value="manual">Manual (use mouse)</option>
+      </select>
+    </div>
+    <div id="empty-state">No objects loaded — draw some in <a href="/editor" style="color:#ffaa55">/editor</a> first.</div>
+  </div>
+
+  <div id="controls">
+    <aside id="obj-list-pane">
+      <h2>Objects</h2>
+      <ul id="objlist"></ul>
+      <div style="margin-top:14px; color:var(--muted); font-size:11px; line-height:1.7;">
+        <a class="subtle" href="/editor" target="_blank">edit shapes →</a><br>
+        <a class="subtle" href="/style/preview" target="_blank" id="open-preview-link">open preview window →</a><br>
+        <a class="subtle" href="/" target="_blank">open real projector →</a>
+      </div>
+    </aside>
+
+    <section id="form-pane">
+      <h2 id="active-title">No object selected</h2>
+      <div id="active-sub"></div>
+
+      <div id="tabs">
+        <button data-tab="outline" class="active">Outline</button>
+        <button data-tab="fill">Fill</button>
+        <button data-tab="image">Image</button>
+        <button data-tab="label">Label</button>
+        <button data-tab="sound">Sound</button>
+        <button data-tab="highlight">Highlight</button>
+        <button data-tab="click">Click</button>
+      </div>
+
+      <div id="tab-outline" class="tab active">
+        <div class="tab-subtitle"><b>Idle state.</b> The polygon's border when no one is hovering.</div>
+        <div class="field">
+          <label>Color</label>
+          <input id="ol-color" type="color" value="#ffffff" />
+          <button class="btn subtle" id="ol-color-clear" title="Clear override">×</button>
+        </div>
+        <div class="field">
+          <label>Width</label>
+          <input id="ol-width" type="range" min="0" max="12" step="0.5" value="1" />
+          <span class="val" id="ol-width-val">1.0</span>
+        </div>
+        <div class="field">
+          <label>Opacity</label>
+          <input id="ol-opacity" type="range" min="0" max="1" step="0.05" value="1" />
+          <span class="val" id="ol-opacity-val">1.00</span>
+        </div>
+        <div class="field">
+          <label>Dash</label>
+          <select id="ol-dash">
+            <option value="">(default)</option>
+            <option value="solid">solid</option>
+            <option value="dashed">dashed</option>
+            <option value="dotted">dotted</option>
+          </select>
+          <span></span>
+        </div>
+      </div>
+
+      <div id="tab-fill" class="tab">
+        <div class="tab-subtitle"><b>Idle state.</b> Solid color inside the polygon when no one is hovering. On hover, Highlight takes over.</div>
+        <div class="field">
+          <label>Color</label>
+          <input id="fl-color" type="color" value="#ffffff" />
+          <button class="btn subtle" id="fl-color-clear" title="Clear override">×</button>
+        </div>
+        <div class="field">
+          <label>Opacity</label>
+          <input id="fl-opacity" type="range" min="0" max="1" step="0.05" value="0" />
+          <span class="val" id="fl-opacity-val">0.00</span>
+        </div>
+      </div>
+
+      <div id="tab-image" class="tab">
+        <div class="tab-subtitle"><b>Idle state.</b> Photo or graphic clipped to the polygon shape (e.g. a book cover).</div>
+        <div id="im-drop" style="border: 2px dashed #444; border-radius: 6px;
+             padding: 18px; text-align: center; color: var(--muted);
+             cursor: pointer; margin-bottom: 14px;">
+          <div id="im-drop-msg">Drop an image here, or click to choose</div>
+          <input id="im-file" type="file" accept="image/png,image/jpeg,image/webp" style="display:none" />
+        </div>
+        <div id="im-thumb-wrap" style="display:none; margin-bottom: 12px;
+             background: #1a1a1a; padding: 8px; border-radius: 4px;
+             border: 1px solid #333; text-align: center;">
+          <img id="im-thumb" style="max-width: 100%; max-height: 140px; display: block; margin: 0 auto;" />
+          <div id="im-meta" style="font-size: 10px; color: var(--muted); margin-top: 6px;"></div>
+        </div>
+        <div class="field">
+          <label>Fit</label>
+          <select id="im-fit">
+            <option value="cover">cover — fill the polygon, may crop</option>
+            <option value="contain">contain — fit inside, may letterbox</option>
+            <option value="stretch">stretch — exact fit, may distort</option>
+          </select>
+          <span></span>
+        </div>
+        <div class="field">
+          <label>Opacity</label>
+          <input id="im-opacity" type="range" min="0" max="1" step="0.05" value="1" />
+          <span class="val" id="im-opacity-val">1.00</span>
+        </div>
+        <div class="controls-row" style="border-top: none; padding-top: 4px; margin-top: 0;">
+          <button class="btn subtle" id="im-remove">Remove image</button>
+        </div>
+      </div>
+
+      <div id="tab-label" class="tab">
+        <div class="tab-subtitle"><b>On hover.</b> The text that fades in above the polygon when someone mouses over.</div>
+        <div class="field" style="grid-template-columns: 90px 1fr;">
+          <label>Show label</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#aaa; font-size:12px;">
+            <input id="lb-show" type="checkbox" checked style="width:auto;" />
+            <span id="lb-show-hint" style="color:var(--muted); font-size:11px;">visible on hover (the projector wall fades it in)</span>
+          </label>
+        </div>
+        <div class="field" style="grid-template-columns: 90px 1fr;">
+          <label>Display text</label>
+          <input id="lb-text" type="text" placeholder="(uses the object's label by default)" maxlength="200" />
+        </div>
+        <div style="color:var(--muted); font-size:11px; line-height:1.5; margin-top:8px;">
+          The object's <em>identifier</em> stays as set in /editor — this only changes what shows up on the wall over the polygon.
+        </div>
+      </div>
+
+      <div id="tab-sound" class="tab">
+        <div class="tab-subtitle"><b>On hover.</b> Audio clip that plays when the mouse enters this polygon (MP3 / WAV / OGG / M4A / AAC).</div>
+        <div id="sn-drop" style="border: 2px dashed #444; border-radius: 6px;
+             padding: 18px; text-align: center; color: var(--muted);
+             cursor: pointer; margin-bottom: 14px;">
+          <div id="sn-drop-msg">Drop an audio file here, or click to choose</div>
+          <input id="sn-file" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.mp3,.wav,.ogg,.m4a,.aac" style="display:none" />
+        </div>
+        <div id="sn-info-wrap" style="display:none; margin-bottom: 12px;
+             background: #1a1a1a; padding: 8px 12px; border-radius: 4px;
+             border: 1px solid #333;">
+          <div id="sn-meta" style="font-size: 10px; color: var(--muted); word-break: break-all;"></div>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+            <button class="btn subtle" id="sn-preview" type="button">▶ Preview</button>
+            <button class="btn subtle" id="sn-stop" type="button" disabled>■ Stop</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Gain</label>
+          <input id="sn-gain" type="range" min="0" max="1" step="0.05" value="1" />
+          <span class="val" id="sn-gain-val">1.00</span>
+        </div>
+        <div class="controls-row" style="border-top: none; padding-top: 4px; margin-top: 0;">
+          <button class="btn subtle" id="sn-remove">Remove sound</button>
+        </div>
+      </div>
+
+      <div id="tab-highlight" class="tab">
+        <div class="tab-subtitle"><b>On hover.</b> Animated effect that fades in when mouse is over the polygon (glow halo, pulse ring, etc.). Color tints the effect.</div>
+        <div class="field">
+          <label>Effect</label>
+          <select id="hl-effect">
+            <option value="">(default)</option>
+            <option value="glow">glow — warm halo</option>
+            <option value="pulse">pulse — sonar ring</option>
+            <option value="aurora">aurora — gradient</option>
+            <option value="bloom">bloom — radial breath</option>
+            <option value="ants">ants — marching dashes</option>
+            <option value="ember">ember — edge halo</option>
+          </select>
+          <span></span>
+        </div>
+        <div class="field">
+          <label>Color</label>
+          <input id="hl-color" type="color" value="#ffaa55" />
+          <button class="btn subtle" id="hl-color-clear" title="Clear override">×</button>
+        </div>
+        <div class="field">
+          <label>Intensity</label>
+          <input id="hl-intensity" type="range" min="0" max="1" step="0.05" value="1" />
+          <span class="val" id="hl-intensity-val">1.00</span>
+        </div>
+        <div class="field">
+          <label>Speed</label>
+          <input id="hl-speed" type="range" min="0.3" max="3.0" step="0.1" value="1" />
+          <span class="val" id="hl-speed-val">1.0×</span>
+        </div>
+        <div class="field" title="Direct opacity for the highlight fill — independent of Intensity. Default uses each effect's baked-in opacity (e.g. fx-glow=0.18). Crank to ~0.95 to match the border.">
+          <label>Fill opacity</label>
+          <input id="hl-fill-opacity" type="range" min="0" max="1" step="0.05" value="0.18" />
+          <button class="btn subtle" id="hl-fill-opacity-clear" title="Clear override (use the effect's default)">×</button>
+        </div>
+        <div class="field" style="grid-template-columns: 90px 1fr;">
+          <label>Notes</label>
+          <textarea id="hl-notes" placeholder="(ideas / things to come back to)"></textarea>
+        </div>
+      </div>
+
+      <div id="tab-click" class="tab">
+        <div class="tab-subtitle"><b>On click.</b> Quick generative animation overlaid on the polygon when it's clicked. The device dispatch (if any) still fires alongside.</div>
+        <div class="field">
+          <label>Effect</label>
+          <select id="ck-effect">
+            <option value="">(none)</option>
+            <option value="loading_bar">loading_bar — horizontal fill</option>
+          </select>
+          <span></span>
+        </div>
+        <div class="field">
+          <label>Color</label>
+          <input id="ck-color" type="color" value="#ffffff" />
+          <button class="btn subtle" id="ck-color-clear" title="Clear override">×</button>
+        </div>
+        <div class="field">
+          <label>Duration</label>
+          <input id="ck-duration" type="range" min="100" max="5000" step="50" value="1500" />
+          <span class="val" id="ck-duration-val">1500 ms</span>
+        </div>
+        <div class="field" title="Horizontal center of the bar, as a fraction of the polygon's bounding box. 0%=left edge, 50%=center, 100%=right edge. Negative or >100% lets the bar overshoot.">
+          <label>Horizontal</label>
+          <input id="ck-x" type="range" min="-0.5" max="1.5" step="0.01" value="0.5" />
+          <span class="val" id="ck-x-val">50%</span>
+        </div>
+        <div class="field" title="Vertical center of the bar. 0%=top edge, 50%=center, 100%=bottom edge. Use >100% to place the bar below the polygon.">
+          <label>Vertical</label>
+          <input id="ck-y" type="range" min="-0.5" max="1.5" step="0.01" value="0.5" />
+          <span class="val" id="ck-y-val">50%</span>
+        </div>
+        <div class="field" title="Bar width as a fraction of the polygon's bbox width. 100% = spans the polygon exactly.">
+          <label>Width</label>
+          <input id="ck-width" type="range" min="0" max="2" step="0.01" value="0.85" />
+          <span class="val" id="ck-width-val">85%</span>
+        </div>
+        <div class="field" title="Bar height as a fraction of the polygon's bbox height. Tip: for tall narrow polygons like books, use a small value (~3-5%).">
+          <label>Height</label>
+          <input id="ck-height" type="range" min="0" max="2" step="0.01" value="0.18" />
+          <span class="val" id="ck-height-val">18%</span>
+        </div>
+        <div class="controls-row" style="border-top: none; padding-top: 4px; margin-top: 0;">
+          <button class="btn subtle" id="ck-preview" type="button">▶ Preview animation</button>
+        </div>
+
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid #2a2a2a;
+                    color: var(--muted); font-size: 11px; text-transform: uppercase;
+                    letter-spacing: 0.5px;">Click sound</div>
+        <div id="cks-drop" style="border: 2px dashed #444; border-radius: 6px;
+             padding: 14px; text-align: center; color: var(--muted);
+             cursor: pointer; margin: 10px 0;">
+          <div id="cks-drop-msg">Drop an audio file here, or click to choose</div>
+          <input id="cks-file" type="file"
+                 accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.mp3,.wav,.ogg,.m4a,.aac"
+                 style="display:none" />
+        </div>
+        <div id="cks-info-wrap" style="display:none; margin-bottom: 10px;
+             background: #1a1a1a; padding: 8px 12px; border-radius: 4px;
+             border: 1px solid #333;">
+          <div id="cks-meta" style="font-size: 10px; color: var(--muted); word-break: break-all;"></div>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+            <button class="btn subtle" id="cks-preview-snd" type="button">▶ Preview sound</button>
+            <button class="btn subtle" id="cks-stop-snd" type="button" disabled>■ Stop</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Gain</label>
+          <input id="cks-gain" type="range" min="0" max="1" step="0.05" value="1" />
+          <span class="val" id="cks-gain-val">1.00</span>
+        </div>
+        <div class="controls-row" style="border-top: none; padding-top: 4px; margin-top: 0;">
+          <button class="btn subtle" id="cks-remove" type="button">Remove click sound</button>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <button class="btn primary" id="save">Save to objects.json</button>
+        <button class="btn subtle" id="reset-tab">Reset this tab</button>
+        <button class="btn subtle" id="undo-btn" title="Cmd+Z / Ctrl+Z" disabled>↶ Undo</button>
+        <span style="flex:1"></span>
+        <span id="dirty-flag" style="color:var(--muted); font-size:11px;"></span>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ===================== state =====================
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const EFFECTS = ['glow', 'pulse', 'aurora', 'bloom', 'ants', 'ember'];
+const DASH_PATTERNS = { solid: 'none', dashed: '8 6', dotted: '2 4' };
+
+let projector = [1920, 1080];
+// objects array — each entry: {id, label, polygon, device_id, style,
+// animation, appearance, notes}. Mutated in place by form changes.
+let objects = [];
+let activeId = null;
+let dirty = false;
+// Preview-mode controls how /style/preview renders. Default matches the
+// inspector's own embedded preview (active object shown as hovered).
+let previewMode = 'active_hovered';
+
+// ----- undo stack ----- Snapshots (objects + activeId) taken before each
+// edit. Cmd+Z / Ctrl+Z pops the most recent. Throttle limits stack growth
+// during continuous slider drags (one slider drag = one undo step).
+const UNDO_CAP = 50;
+const UNDO_COALESCE_MS = 400;
+let undoStack = [];
+let lastSnapshotTime = 0;
+
+const previewSvg = document.getElementById('preview');
+const previewModeSel = document.getElementById('preview-mode');
+const objList    = document.getElementById('objlist');
+const titleEl    = document.getElementById('active-title');
+const subEl      = document.getElementById('active-sub');
+const dirtyFlag  = document.getElementById('dirty-flag');
+const toast      = document.getElementById('toast');
+const emptyState = document.getElementById('empty-state');
+
+// Outline field refs
+const olColor    = document.getElementById('ol-color');
+const olColorClr = document.getElementById('ol-color-clear');
+const olWidth    = document.getElementById('ol-width');
+const olWidthVal = document.getElementById('ol-width-val');
+const olOpacity  = document.getElementById('ol-opacity');
+const olOpacityVal = document.getElementById('ol-opacity-val');
+const olDash     = document.getElementById('ol-dash');
+
+// Fill field refs
+const flColor    = document.getElementById('fl-color');
+const flColorClr = document.getElementById('fl-color-clear');
+const flOpacity  = document.getElementById('fl-opacity');
+const flOpacityVal = document.getElementById('fl-opacity-val');
+
+// Image field refs
+const imDrop     = document.getElementById('im-drop');
+const imDropMsg  = document.getElementById('im-drop-msg');
+const imFile     = document.getElementById('im-file');
+const imThumbWrap = document.getElementById('im-thumb-wrap');
+const imThumb    = document.getElementById('im-thumb');
+const imMeta     = document.getElementById('im-meta');
+const imFit      = document.getElementById('im-fit');
+const imOpacity  = document.getElementById('im-opacity');
+const imOpacityVal = document.getElementById('im-opacity-val');
+const imRemove   = document.getElementById('im-remove');
+
+// Sound field refs
+const snDrop     = document.getElementById('sn-drop');
+const snDropMsg  = document.getElementById('sn-drop-msg');
+const snFile     = document.getElementById('sn-file');
+const snInfoWrap = document.getElementById('sn-info-wrap');
+const snMeta     = document.getElementById('sn-meta');
+const snPreview  = document.getElementById('sn-preview');
+const snStop     = document.getElementById('sn-stop');
+const snGain     = document.getElementById('sn-gain');
+const snGainVal  = document.getElementById('sn-gain-val');
+const snRemove   = document.getElementById('sn-remove');
+
+// Audio element used by the Preview button. Lazy-allocated so we don't
+// reach for autoplay before the user gestures.
+let snAudio = null;
+
+// Label field refs
+const lbShow     = document.getElementById('lb-show');
+const lbText     = document.getElementById('lb-text');
+
+// Highlight (animation) field refs
+const hlEffect   = document.getElementById('hl-effect');
+const hlColor    = document.getElementById('hl-color');
+const hlColorClr = document.getElementById('hl-color-clear');
+const hlIntensity = document.getElementById('hl-intensity');
+const hlIntensityVal = document.getElementById('hl-intensity-val');
+const hlSpeed    = document.getElementById('hl-speed');
+const hlSpeedVal = document.getElementById('hl-speed-val');
+const hlFillOpacity = document.getElementById('hl-fill-opacity');
+const hlFillOpacityClr = document.getElementById('hl-fill-opacity-clear');
+const hlNotes    = document.getElementById('hl-notes');
+
+// Click field refs
+const ckEffect   = document.getElementById('ck-effect');
+const ckColor    = document.getElementById('ck-color');
+const ckColorClr = document.getElementById('ck-color-clear');
+const ckDuration = document.getElementById('ck-duration');
+const ckDurationVal = document.getElementById('ck-duration-val');
+const ckX        = document.getElementById('ck-x');
+const ckXVal     = document.getElementById('ck-x-val');
+const ckY        = document.getElementById('ck-y');
+const ckYVal     = document.getElementById('ck-y-val');
+const ckWidth    = document.getElementById('ck-width');
+const ckWidthVal = document.getElementById('ck-width-val');
+const ckHeight   = document.getElementById('ck-height');
+const ckHeightVal = document.getElementById('ck-height-val');
+const ckPreview  = document.getElementById('ck-preview');
+
+// Click-sound field refs (`cks-` prefix to avoid clashing with `ck-` and `sn-`)
+const cksDrop     = document.getElementById('cks-drop');
+const cksDropMsg  = document.getElementById('cks-drop-msg');
+const cksFile     = document.getElementById('cks-file');
+const cksInfoWrap = document.getElementById('cks-info-wrap');
+const cksMeta     = document.getElementById('cks-meta');
+const cksPreview  = document.getElementById('cks-preview-snd');
+const cksStop     = document.getElementById('cks-stop-snd');
+const cksGain     = document.getElementById('cks-gain');
+const cksGainVal  = document.getElementById('cks-gain-val');
+const cksRemove   = document.getElementById('cks-remove');
+let cksAudio = null;   // lazy preview-audio element
+
+// ===================== helpers =====================
+function rgbaFromHex(hex, opacity) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+function polygonBbox(points) {
+  const xs = points.map(p => p[0]);
+  const ys = points.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+function showToast(msg, ms=1400) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+// Snapshot the editable state BEFORE an edit is applied. Throttled so a
+// continuous slider drag (which fires `input` for every pixel) produces
+// one undo step, not 50. The first input within an UNDO_COALESCE_MS window
+// captures the pre-drag state; subsequent inputs are skipped.
+function snapshotForUndo() {
+  const now = Date.now();
+  if (now - lastSnapshotTime < UNDO_COALESCE_MS) return;
+  undoStack.push(JSON.parse(JSON.stringify({objects, activeId})));
+  if (undoStack.length > UNDO_CAP) undoStack.shift();
+  lastSnapshotTime = now;
+  updateUndoButton();
+}
+
+function undo() {
+  if (undoStack.length === 0) {
+    showToast('Nothing to undo');
+    return;
+  }
+  const snap = undoStack.pop();
+  objects = snap.objects;
+  // The previously-active object might have been added since the snapshot;
+  // if it's now gone, fall back to the first remaining object.
+  activeId = objects.find(o => o.id === snap.activeId) ? snap.activeId
+           : (objects.length ? objects[0].id : null);
+  // Force-allow the next edit to snapshot — undo itself isn't a coalesce
+  // event, but we shouldn't block the user's NEXT edit from being undoable.
+  lastSnapshotTime = 0;
+  renderList();
+  loadActiveIntoForm();
+  renderPreview();
+  pushDraft();
+  markDirty();
+  updateUndoButton();
+  showToast(`undone (${undoStack.length} left)`);
+}
+
+function updateUndoButton() {
+  const btn = document.getElementById('undo-btn');
+  if (!btn) return;
+  btn.disabled = undoStack.length === 0;
+  btn.textContent = undoStack.length
+    ? `↶ Undo (${undoStack.length}) ⌘Z`
+    : '↶ Undo';
+}
+
+function activeObj() { return objects.find(o => o.id === activeId); }
+
+function markDirty() {
+  dirty = true;
+  dirtyFlag.textContent = '● unsaved';
+  dirtyFlag.style.color = 'var(--accent)';
+}
+function clearDirty() {
+  dirty = false;
+  dirtyFlag.textContent = '';
+}
+
+// ===================== load =====================
+async function init() {
+  // projector dims so the preview viewBox matches the wall
+  try {
+    const meta = await (await fetch('/api/editor/scene')).json();
+    if (meta.projector && meta.projector.length === 2) projector = meta.projector;
+  } catch (e) { /* defaults */ }
+  previewSvg.setAttribute('viewBox', `0 0 ${projector[0]} ${projector[1]}`);
+
+  const data = await (await fetch('/api/objects')).json();
+  objects = data.map(o => ({
+    id: o.id,
+    label: o.label || '',
+    polygon: o.polygon || [],
+    device_id: o.device_id || null,
+    style: o.style === 'occluder' ? 'occluder' : 'normal',
+    animation: o.animation ? {...o.animation} : {},
+    appearance: o.appearance ? deepCopyAppearance(o.appearance) : {},
+    sound: o.sound ? {...o.sound} : {},
+    click: o.click ? {...o.click} : {},
+    // The style editor doesn't manage `tracking` (that's the editor page's
+    // checkbox), but it MUST round-trip the field on save — otherwise saving
+    // any style change strips the tracking flag and the runtime page stops
+    // binding the polygon to the mouse.
+    tracking: o.tracking ? {...o.tracking} : {},
+    notes: o.notes || '',
+  }));
+
+  if (objects.length) {
+    const first = objects.find(o => o.style !== 'occluder') || objects[0];
+    activeId = first.id;
+  }
+  renderList();
+  loadActiveIntoForm();
+  renderPreview();
+  pushDraft();
+}
+
+function deepCopyAppearance(ap) {
+  // Manual shallow-then-shallow copy — keeps the structure typed and avoids
+  // accidental sharing of crop objects between original and edited state.
+  const out = {};
+  if (ap.outline) out.outline = {...ap.outline};
+  if (ap.fill)    out.fill    = {...ap.fill};
+  if (ap.image)   out.image   = {...ap.image, crop: ap.image.crop ? {...ap.image.crop} : undefined};
+  return out;
+}
+
+// ===================== object list =====================
+function renderList() {
+  objList.innerHTML = '';
+  for (const obj of objects) {
+    const li = document.createElement('li');
+    let cls = '';
+    if (obj.id === activeId) cls += ' active';
+    if (obj.style === 'occluder') cls += ' occluder';
+    li.className = cls.trim();
+    const ap = obj.appearance || {};
+    const flags = [];
+    if (ap.outline) flags.push('outline');
+    if (ap.fill)    flags.push('fill');
+    if (ap.image)   flags.push('image');
+    if (ap.label)   flags.push(ap.label.hidden ? 'label:hidden' : 'label:custom');
+    if (obj.sound && obj.sound.src) flags.push('sound');
+    if (obj.click && obj.click.effect) flags.push('click:' + obj.click.effect);
+    if (obj.animation && obj.animation.effect) flags.push('fx:' + obj.animation.effect);
+    if (obj.style === 'occluder') flags.push('occluder');
+    const meta = flags.length ? flags.join(' · ') : '(no overrides)';
+    li.innerHTML = `<div class="obj-label">${obj.label || '(unlabeled)'}</div>
+      <div class="obj-id">${obj.id}</div>
+      <div class="obj-meta">${meta}</div>`;
+    li.addEventListener('click', () => selectObject(obj.id));
+    objList.appendChild(li);
+  }
+}
+
+function selectObject(id) {
+  activeId = id;
+  renderList();
+  loadActiveIntoForm();
+  renderPreview();
+  // Push the new active_id so /style/preview's "Active hovered" mode follows
+  // the inspector's selection. Without this, switching objects in the list
+  // leaves the preview window stuck on whichever object was first selected.
+  pushDraft();
+}
+
+// ===================== preview SVG =====================
+function clearPreview() {
+  for (const el of previewSvg.querySelectorAll('polygon, image, clipPath, text, rect.selection')) {
+    el.remove();
+  }
+}
+
+function renderPreview() {
+  clearPreview();
+  if (!objects.length) {
+    emptyState.style.display = 'flex';
+    return;
+  }
+  emptyState.style.display = 'none';
+
+  // Occluders first so normal polygons drawn on top get clicks + hover.
+  // Active object stays where its style class falls — selection ring drawn
+  // last anyway, so it always lands on top regardless of partition order.
+  const ordered = [
+    ...objects.filter(o => o.style === 'occluder'),
+    ...objects.filter(o => o.style !== 'occluder'),
+  ];
+  for (const obj of ordered) {
+    if (!obj.polygon || obj.polygon.length < 3) continue;
+    const isOccluder = obj.style === 'occluder';
+    const a = obj.animation || {};
+    const ap = obj.appearance || {};
+    const polyEffect = EFFECTS.includes(a.effect) ? a.effect : 'glow';
+
+    if (!isOccluder && ap.image && ap.image.src) {
+      renderObjectImage(previewSvg, SVG_NS, obj, ap.image);
+    }
+
+    const poly = document.createElementNS(SVG_NS, 'polygon');
+    let cls = 'obj';
+    if (isOccluder) cls += ' occluder';
+    else cls += ' fx-' + polyEffect;
+    // Mirror the chosen preview_mode in the embedded preview so what the
+    // user sees here matches what /style/preview shows.
+    if (previewMode === 'active_hovered' && obj.id === activeId) cls += ' hovered';
+    poly.setAttribute('class', cls);
+    poly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+    poly.setAttribute('data-id', obj.id);
+
+    const styleParts = [];
+    if (a.color)                          styleParts.push(`--obj-color: ${a.color}`);
+    if (typeof a.intensity === 'number')  styleParts.push(`--obj-intensity: ${a.intensity}`);
+    if (typeof a.speed     === 'number')  styleParts.push(`--obj-speed: ${a.speed}`);
+    if (typeof a.fill_opacity === 'number') styleParts.push(`--obj-fill-opacity: ${a.fill_opacity}`);
+    if (!isOccluder && ap.outline) {
+      const op = ap.outline.opacity != null ? ap.outline.opacity : 1;
+      if (ap.outline.color != null) {
+        styleParts.push(`--ap-stroke: ${rgbaFromHex(ap.outline.color, op)}`);
+      } else if (ap.outline.opacity != null) {
+        styleParts.push(`--ap-stroke-opacity: ${op}`);
+      }
+      if (ap.outline.width != null) styleParts.push(`--ap-stroke-width: ${ap.outline.width}`);
+      if (ap.outline.dash) {
+        styleParts.push(`--ap-stroke-dash: ${DASH_PATTERNS[ap.outline.dash] || 'none'}`);
+      }
+    }
+    if (!isOccluder && ap.fill && (ap.fill.color != null || ap.fill.opacity != null)) {
+      const color = ap.fill.color || '#ffffff';
+      const op = ap.fill.opacity != null ? ap.fill.opacity : 0;
+      styleParts.push(`--ap-fill: ${rgbaFromHex(color, op)}`);
+    }
+    if (styleParts.length) poly.setAttribute('style', styleParts.join('; '));
+
+    poly.addEventListener('click', () => {
+      if (dirty && obj.id !== activeId && !confirm('Discard unsaved changes?')) return;
+      if (obj.id !== activeId) { clearDirty(); selectObject(obj.id); }
+    });
+    previewSvg.appendChild(poly);
+
+    const apLabel = ap.label || {};
+    const labelText = apLabel.text != null ? apLabel.text : obj.label;
+    if (labelText && !isOccluder && !apLabel.hidden) {
+      const bb = polygonBbox(obj.polygon);
+      const lbl = document.createElementNS(SVG_NS, 'text');
+      lbl.setAttribute('class', 'label');
+      lbl.setAttribute('x', bb.x + bb.w / 2);
+      lbl.setAttribute('y', bb.y - 8);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.textContent = labelText;
+      previewSvg.appendChild(lbl);
+    }
+
+    if (polyEffect === 'pulse' && !isOccluder && obj.id === activeId &&
+        previewMode === 'active_hovered') {
+      const ring = document.createElementNS(SVG_NS, 'polygon');
+      ring.setAttribute('class', 'pulse-ring active');
+      ring.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+      if (styleParts.length) ring.setAttribute('style', styleParts.join('; '));
+      previewSvg.appendChild(ring);
+    }
+  }
+
+  // Selection rectangle around the active object's bbox.
+  const obj = activeObj();
+  if (obj && obj.polygon && obj.polygon.length >= 3) {
+    const bb = polygonBbox(obj.polygon);
+    const PAD = 8;
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('class', 'selection');
+    rect.setAttribute('x', bb.x - PAD);
+    rect.setAttribute('y', bb.y - PAD);
+    rect.setAttribute('width',  bb.w + PAD * 2);
+    rect.setAttribute('height', bb.h + PAD * 2);
+    previewSvg.appendChild(rect);
+  }
+}
+
+function renderObjectImage(svg, ns, obj, image) {
+  const bb = polygonBbox(obj.polygon);
+  const FIT_PRESERVE = { cover: 'xMidYMid slice', contain: 'xMidYMid meet', stretch: 'none' };
+  const clipId = `appearance-clip-${obj.id}`;
+  const clipPath = document.createElementNS(ns, 'clipPath');
+  clipPath.setAttribute('id', clipId);
+  const clipPoly = document.createElementNS(ns, 'polygon');
+  clipPoly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+  clipPath.appendChild(clipPoly);
+  svg.appendChild(clipPath);
+  const img = document.createElementNS(ns, 'image');
+  img.setAttribute('href', '/' + image.src);
+  img.setAttribute('x', bb.x); img.setAttribute('y', bb.y);
+  img.setAttribute('width', bb.w); img.setAttribute('height', bb.h);
+  img.setAttribute('preserveAspectRatio', FIT_PRESERVE[image.fit] || 'xMidYMid slice');
+  img.setAttribute('clip-path', `url(#${clipId})`);
+  img.setAttribute('pointer-events', 'none');
+  if (typeof image.opacity === 'number') img.setAttribute('opacity', image.opacity);
+  svg.appendChild(img);
+}
+
+// ===================== form ↔ active object =====================
+function loadActiveIntoForm() {
+  const obj = activeObj();
+  if (!obj) {
+    titleEl.textContent = 'No object selected';
+    subEl.textContent = '';
+    return;
+  }
+  titleEl.textContent = obj.label || '(unlabeled)';
+  const bits = [obj.id];
+  if (obj.device_id) bits.push('device: ' + obj.device_id);
+  if (obj.style === 'occluder') bits.push('OCCLUDER — no styling applies');
+  subEl.textContent = bits.join('  ·  ');
+
+  const ap = obj.appearance || {};
+  // Outline
+  const ol = ap.outline || {};
+  olColor.value = ol.color || '#ffffff';
+  olColor.dataset.set = ol.color != null ? '1' : '';
+  olWidth.value = ol.width != null ? ol.width : 1;
+  olWidthVal.textContent = (+olWidth.value).toFixed(1);
+  olOpacity.value = ol.opacity != null ? ol.opacity : 1;
+  olOpacityVal.textContent = (+olOpacity.value).toFixed(2);
+  olDash.value = ol.dash || '';
+
+  // Fill
+  const fl = ap.fill || {};
+  flColor.value = fl.color || '#ffffff';
+  flColor.dataset.set = fl.color != null ? '1' : '';
+  flOpacity.value = fl.opacity != null ? fl.opacity : 0;
+  flOpacityVal.textContent = (+flOpacity.value).toFixed(2);
+
+  // Image
+  const im = ap.image || {};
+  if (im.src) {
+    imThumbWrap.style.display = 'block';
+    imThumb.src = '/' + im.src + '?t=' + Date.now();   // cache-bust on every load
+    imMeta.textContent = im.src;
+    imDropMsg.textContent = 'Drop a new image to replace, or click to choose';
+  } else {
+    imThumbWrap.style.display = 'none';
+    imThumb.src = '';
+    imMeta.textContent = '';
+    imDropMsg.textContent = 'Drop an image here, or click to choose';
+  }
+  imFit.value = im.fit || 'cover';
+  imOpacity.value = im.opacity != null ? im.opacity : 1;
+  imOpacityVal.textContent = (+imOpacity.value).toFixed(2);
+
+  // Label override — hidden=true means we suppress the on-hover text on
+  // the projector page. text overrides what's shown; empty = use obj.label.
+  const lb = ap.label || {};
+  lbShow.checked = !lb.hidden;
+  lbText.value = lb.text != null ? lb.text : '';
+  lbText.placeholder = obj.label
+    ? `(uses "${obj.label}" by default)`
+    : '(uses the object\'s label by default)';
+
+  // Sound — present src + gain. obj.sound lives at the top level, not under
+  // appearance, because it's a hover behavior (sibling to animation).
+  const sn = obj.sound || {};
+  if (sn.src) {
+    snInfoWrap.style.display = 'block';
+    snMeta.textContent = sn.src;
+    snDropMsg.textContent = 'Drop a new audio file to replace, or click to choose';
+  } else {
+    snInfoWrap.style.display = 'none';
+    snMeta.textContent = '';
+    snDropMsg.textContent = 'Drop an audio file here, or click to choose';
+  }
+  snGain.value = sn.gain != null ? sn.gain : 1;
+  snGainVal.textContent = (+snGain.value).toFixed(2);
+  // Reset the preview audio when the user changes object so we don't keep
+  // playing the previous clip after a selection change.
+  if (snAudio) { snAudio.pause(); snAudio = null; snStop.disabled = true; }
+
+  // Highlight (animation)
+  const a = obj.animation || {};
+  hlEffect.value = a.effect || '';
+  hlColor.value = a.color || '#ffaa55';
+  hlColor.dataset.set = a.color != null ? '1' : '';
+  hlIntensity.value = a.intensity != null ? a.intensity : 1;
+  hlIntensityVal.textContent = (+hlIntensity.value).toFixed(2);
+  hlSpeed.value = a.speed != null ? a.speed : 1;
+  hlSpeedVal.textContent = (+hlSpeed.value).toFixed(1) + '×';
+  hlFillOpacity.value = a.fill_opacity != null ? a.fill_opacity : 0.18;
+  hlFillOpacity.dataset.set = a.fill_opacity != null ? '1' : '';
+  hlNotes.value = obj.notes || '';
+
+  // Click animation. `effect=""` means none — empty string maps to the
+  // "(none)" option in the select.
+  const ck = obj.click || {};
+  ckEffect.value = ck.effect || '';
+  ckColor.value = ck.color || '#ffffff';
+  ckColor.dataset.set = ck.color != null ? '1' : '';
+  ckDuration.value = ck.duration_ms != null ? ck.duration_ms : 1500;
+  ckDurationVal.textContent = `${ckDuration.value} ms`;
+  // Position + size sliders default to the same values the renderer uses
+  // when the fields are unset. dataset.set tracks "did the user touch this?"
+  // so we know whether to emit the value into the saved click block.
+  ckX.value = ck.x != null ? ck.x : 0.5;
+  ckX.dataset.set = ck.x != null ? '1' : '';
+  ckXVal.textContent = `${Math.round(+ckX.value * 100)}%`;
+  ckY.value = ck.y != null ? ck.y : 0.5;
+  ckY.dataset.set = ck.y != null ? '1' : '';
+  ckYVal.textContent = `${Math.round(+ckY.value * 100)}%`;
+  ckWidth.value = ck.width != null ? ck.width : 0.85;
+  ckWidth.dataset.set = ck.width != null ? '1' : '';
+  ckWidthVal.textContent = `${Math.round(+ckWidth.value * 100)}%`;
+  ckHeight.value = ck.height != null ? ck.height : 0.18;
+  ckHeight.dataset.set = ck.height != null ? '1' : '';
+  ckHeightVal.textContent = `${Math.round(+ckHeight.value * 100)}%`;
+
+  // Click sound — nested under click.sound, same {src, gain} schema as obj.sound.
+  const cks = ck.sound || {};
+  if (cks.src) {
+    cksInfoWrap.style.display = 'block';
+    cksMeta.textContent = cks.src;
+    cksDropMsg.textContent = 'Drop a new audio file to replace, or click to choose';
+  } else {
+    cksInfoWrap.style.display = 'none';
+    cksMeta.textContent = '';
+    cksDropMsg.textContent = 'Drop an audio file here, or click to choose';
+  }
+  cksGain.value = cks.gain != null ? cks.gain : 1;
+  cksGainVal.textContent = (+cksGain.value).toFixed(2);
+  // Reset the preview audio on object switch (same pattern as hover sound).
+  if (cksAudio) { cksAudio.pause(); cksAudio = null; cksStop.disabled = true; }
+}
+
+function commitFormToActive() {
+  const obj = activeObj();
+  if (!obj) return;
+
+  // Outline — only include keys the user has explicitly set. The "color set?"
+  // flag uses dataset.set so we don't accidentally treat the default
+  // placeholder #ffffff as user intent.
+  const ol = {};
+  if (olColor.dataset.set === '1') ol.color = olColor.value;
+  if (+olWidth.value !== 1)        ol.width = +olWidth.value;
+  if (+olOpacity.value !== 1)      ol.opacity = +olOpacity.value;
+  if (olDash.value)                ol.dash = olDash.value;
+
+  const fl = {};
+  if (flColor.dataset.set === '1') fl.color = flColor.value;
+  if (+flOpacity.value !== 0)      fl.opacity = +flOpacity.value;
+
+  // Image — src lives in obj.appearance.image.src (set by upload / clear),
+  // we only sync fit + opacity from the form. Removing src lives in the
+  // imRemove handler so the user's intent is unambiguous.
+  const existingImage = (obj.appearance && obj.appearance.image) || null;
+  let im = null;
+  if (existingImage && existingImage.src) {
+    im = { src: existingImage.src };
+    if (imFit.value && imFit.value !== 'cover') im.fit = imFit.value;
+    if (+imOpacity.value !== 1) im.opacity = +imOpacity.value;
+    // Preserve crop if it was set previously (no UI to edit it yet).
+    if (existingImage.crop) im.crop = existingImage.crop;
+  }
+
+  // Label override. Only emit keys the user actually changed: hidden when
+  // they unchecked Show, text when they typed something. Empty string text
+  // means "fall back to obj.label" — don't store empty overrides.
+  const lb = {};
+  if (!lbShow.checked) lb.hidden = true;
+  if (lbText.value.trim()) lb.text = lbText.value;
+
+  const ap = {};
+  if (Object.keys(ol).length) ap.outline = ol;
+  if (Object.keys(fl).length) ap.fill = fl;
+  if (im) ap.image = im;
+  if (Object.keys(lb).length) ap.label = lb;
+  obj.appearance = ap;
+
+  // Sound (top-level field, sibling to animation). Only emit gain when the
+  // user changed it from 1.0 (the default). src lives on obj.sound, set
+  // separately by the upload handler / remove button — preserve it here.
+  const existingSound = obj.sound || {};
+  if (existingSound.src) {
+    const sn = { src: existingSound.src };
+    if (+snGain.value !== 1) sn.gain = +snGain.value;
+    obj.sound = sn;
+  } else {
+    obj.sound = {};
+  }
+
+  // Click animation. `effect=""` is "no click animation" — drop the block.
+  if (ckEffect.value) {
+    const ck = { effect: ckEffect.value };
+    if (ckColor.dataset.set === '1') ck.color = ckColor.value;
+    if (+ckDuration.value !== 1500) ck.duration_ms = +ckDuration.value;
+    // Position + size: emit only if the user touched the slider, so
+    // unmodified configs stay compact in objects.json.
+    if (ckX.dataset.set      === '1') ck.x      = +ckX.value;
+    if (ckY.dataset.set      === '1') ck.y      = +ckY.value;
+    if (ckWidth.dataset.set  === '1') ck.width  = +ckWidth.value;
+    if (ckHeight.dataset.set === '1') ck.height = +ckHeight.value;
+    // Click sound — preserve src across changes (set by upload / cleared by
+    // Remove). Gain only emits when non-default.
+    const existingCks = (obj.click && obj.click.sound) || null;
+    if (existingCks && existingCks.src) {
+      ck.sound = { src: existingCks.src };
+      if (+cksGain.value !== 1) ck.sound.gain = +cksGain.value;
+    }
+    obj.click = ck;
+  } else {
+    obj.click = {};
+  }
+
+  // Highlight (animation)
+  const an = {};
+  if (hlEffect.value)              an.effect = hlEffect.value;
+  if (hlColor.dataset.set === '1') an.color = hlColor.value;
+  if (+hlIntensity.value !== 1)    an.intensity = +hlIntensity.value;
+  if (+hlSpeed.value !== 1)        an.speed = +hlSpeed.value;
+  if (hlFillOpacity.dataset.set === '1') an.fill_opacity = +hlFillOpacity.value;
+  obj.animation = an;
+  obj.notes = hlNotes.value;
+}
+
+// ===================== draft push =====================
+// Debounce so a slider drag doesn't fire 100 POSTs/sec. 60ms is below human
+// perception threshold for visual feedback in the /style/preview window.
+let draftTimer = null;
+function pushDraft() {
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(async () => {
+    try {
+      await fetch('/api/style/draft', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          objects: objects.filter(o => o.polygon && o.polygon.length >= 3).map(o => ({
+            id: o.id, label: o.label, polygon: o.polygon,
+            device_id: o.device_id, style: o.style,
+            animation: o.animation, appearance: o.appearance,
+            sound: o.sound, click: o.click, notes: o.notes,
+          })),
+          active_id: activeId,
+          preview_mode: previewMode,
+        }),
+      });
+    } catch (e) { /* preview will catch up on next poll */ }
+  }, 60);
+}
+
+previewModeSel.addEventListener('change', () => {
+  previewMode = previewModeSel.value;
+  renderPreview();
+  pushDraft();
+});
+
+// ===================== tab switching =====================
+for (const btn of document.querySelectorAll('#tabs button')) {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+}
+
+// ===================== field wiring =====================
+function onAnyChange() {
+  snapshotForUndo();         // capture PRE-edit state for Cmd+Z
+  commitFormToActive();
+  markDirty();
+  renderList();
+  renderPreview();
+  pushDraft();
+}
+
+olColor.addEventListener('input', () => { olColor.dataset.set = '1'; onAnyChange(); });
+olColorClr.addEventListener('click', () => { delete olColor.dataset.set; olColor.value = '#ffffff'; onAnyChange(); });
+olWidth.addEventListener('input', () => { olWidthVal.textContent = (+olWidth.value).toFixed(1); onAnyChange(); });
+olOpacity.addEventListener('input', () => { olOpacityVal.textContent = (+olOpacity.value).toFixed(2); onAnyChange(); });
+olDash.addEventListener('change', onAnyChange);
+
+flColor.addEventListener('input', () => { flColor.dataset.set = '1'; onAnyChange(); });
+flColorClr.addEventListener('click', () => { delete flColor.dataset.set; flColor.value = '#ffffff'; onAnyChange(); });
+flOpacity.addEventListener('input', () => { flOpacityVal.textContent = (+flOpacity.value).toFixed(2); onAnyChange(); });
+
+// ===================== image upload =====================
+async function uploadImage(file) {
+  const obj = activeObj();
+  if (!obj) return;
+  // Client-side guard rails — server has the canonical limit + validation,
+  // these are just to fail fast and show a nicer error than a 400 response.
+  if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+    showToast('only PNG, JPG, or WebP', 2200);
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    showToast('file too large (max 8 MB)', 2200);
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('object_id', obj.id);
+  imDropMsg.textContent = 'uploading…';
+  try {
+    const res = await fetch('/api/style/image', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.text();
+      showToast('upload failed: ' + err, 2800);
+      return;
+    }
+    const data = await res.json();
+    // Snapshot BEFORE mutating so Cmd+Z reverts the image add.
+    snapshotForUndo();
+    // Replace the active object's image with the new src; keep fit/opacity
+    // from the current form so a re-upload doesn't reset the user's tuning.
+    if (!obj.appearance) obj.appearance = {};
+    obj.appearance.image = {
+      src: data.src,
+      fit: imFit.value || 'cover',
+      opacity: +imOpacity.value,
+    };
+    showToast(`uploaded ${data.w}×${data.h}`);
+    loadActiveIntoForm();
+    markDirty();
+    renderList();
+    renderPreview();
+    pushDraft();
+  } catch (e) {
+    showToast('upload error: ' + e.message, 2800);
+  } finally {
+    imDropMsg.textContent = obj.appearance && obj.appearance.image
+      ? 'Drop a new image to replace, or click to choose'
+      : 'Drop an image here, or click to choose';
+  }
+}
+
+imDrop.addEventListener('click', () => imFile.click());
+imFile.addEventListener('change', () => {
+  const f = imFile.files && imFile.files[0];
+  if (f) uploadImage(f);
+  imFile.value = '';   // allow re-uploading the same filename
+});
+imDrop.addEventListener('dragover', (ev) => {
+  ev.preventDefault();
+  imDrop.style.borderColor = 'var(--accent)';
+  imDrop.style.color = 'var(--accent)';
+});
+imDrop.addEventListener('dragleave', () => {
+  imDrop.style.borderColor = '#444';
+  imDrop.style.color = 'var(--muted)';
+});
+imDrop.addEventListener('drop', (ev) => {
+  ev.preventDefault();
+  imDrop.style.borderColor = '#444';
+  imDrop.style.color = 'var(--muted)';
+  const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (f) uploadImage(f);
+});
+
+imFit.addEventListener('change', onAnyChange);
+imOpacity.addEventListener('input', () => {
+  imOpacityVal.textContent = (+imOpacity.value).toFixed(2);
+  onAnyChange();
+});
+imRemove.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.appearance || !obj.appearance.image) return;
+  snapshotForUndo();
+  delete obj.appearance.image;
+  loadActiveIntoForm();
+  markDirty();
+  renderList();
+  renderPreview();
+  pushDraft();
+});
+
+lbShow.addEventListener('change', onAnyChange);
+lbText.addEventListener('input', onAnyChange);
+
+// ===================== sound upload + preview =====================
+async function uploadSound(file) {
+  const obj = activeObj();
+  if (!obj) return;
+  if (file.size > 8 * 1024 * 1024) {
+    showToast('file too large (max 8 MB)', 2200);
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('object_id', obj.id);
+  snDropMsg.textContent = 'uploading…';
+  try {
+    const res = await fetch('/api/style/sound', { method: 'POST', body: fd });
+    if (!res.ok) {
+      showToast('upload failed: ' + (await res.text()), 2800);
+      return;
+    }
+    const data = await res.json();
+    snapshotForUndo();
+    obj.sound = { src: data.src };
+    if (+snGain.value !== 1) obj.sound.gain = +snGain.value;
+    showToast(`uploaded (${(data.bytes/1024).toFixed(0)} KB)`);
+    loadActiveIntoForm();
+    markDirty(); renderList(); renderPreview(); pushDraft();
+  } catch (e) {
+    showToast('upload error: ' + e.message, 2800);
+  } finally {
+    snDropMsg.textContent = obj.sound && obj.sound.src
+      ? 'Drop a new audio file to replace, or click to choose'
+      : 'Drop an audio file here, or click to choose';
+  }
+}
+
+snDrop.addEventListener('click', () => snFile.click());
+snFile.addEventListener('change', () => {
+  const f = snFile.files && snFile.files[0];
+  if (f) uploadSound(f);
+  snFile.value = '';
+});
+snDrop.addEventListener('dragover', (ev) => {
+  ev.preventDefault();
+  snDrop.style.borderColor = 'var(--accent)';
+  snDrop.style.color = 'var(--accent)';
+});
+snDrop.addEventListener('dragleave', () => {
+  snDrop.style.borderColor = '#444';
+  snDrop.style.color = 'var(--muted)';
+});
+snDrop.addEventListener('drop', (ev) => {
+  ev.preventDefault();
+  snDrop.style.borderColor = '#444';
+  snDrop.style.color = 'var(--muted)';
+  const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (f) uploadSound(f);
+});
+
+snGain.addEventListener('input', () => {
+  snGainVal.textContent = (+snGain.value).toFixed(2);
+  // Match live volume on the preview audio too so the user hears the change
+  // without restarting playback.
+  if (snAudio) snAudio.volume = +snGain.value;
+  onAnyChange();
+});
+
+snPreview.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.sound || !obj.sound.src) return;
+  if (snAudio) { snAudio.pause(); snAudio = null; }
+  snAudio = new Audio('/' + obj.sound.src);
+  snAudio.volume = +snGain.value;
+  snAudio.addEventListener('ended', () => { snStop.disabled = true; });
+  snAudio.play().then(() => { snStop.disabled = false; })
+              .catch(e => showToast('playback blocked: ' + e.message, 2400));
+});
+snStop.addEventListener('click', () => {
+  if (snAudio) { snAudio.pause(); snAudio = null; }
+  snStop.disabled = true;
+});
+snRemove.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.sound || !obj.sound.src) return;
+  snapshotForUndo();
+  obj.sound = {};
+  if (snAudio) { snAudio.pause(); snAudio = null; snStop.disabled = true; }
+  loadActiveIntoForm();
+  markDirty(); renderList(); renderPreview(); pushDraft();
+});
+
+// ===================== click animation preview =====================
+// Mirror of runtime.html's loading-bar animation, but scoped to the inspector's
+// embedded preview SVG. Used by the Preview button so the user can sample the
+// animation without clicking the polygon (which would also dispatch).
+function previewClickAnimation(obj, click) {
+  if (!click || !click.effect || click.effect !== 'loading_bar') return;
+  const color = click.color || '#ffffff';
+  const duration = typeof click.duration_ms === 'number' ? click.duration_ms : 1500;
+  if (!obj.polygon || obj.polygon.length < 3) return;
+  const xs = obj.polygon.map(p => p[0]);
+  const ys = obj.polygon.map(p => p[1]);
+  const bx = Math.min(...xs), by = Math.min(...ys);
+  const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
+  // bbox-relative — mirror of runtime.html. Defaults match old behavior.
+  const xFrac = typeof click.x === 'number' ? click.x : 0.5;
+  const yFrac = typeof click.y === 'number' ? click.y : 0.5;
+  const wFrac = typeof click.width === 'number' ? click.width : 0.85;
+  const barW = bw * wFrac;
+  const barH = typeof click.height === 'number'
+    ? bh * click.height
+    : Math.min(bh * 0.18, 22);
+  const cx = bx + bw * xFrac;
+  const cy = by + bh * yFrac;
+  const barX = cx - barW / 2;
+  const barY = cy - barH / 2;
+
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('pointer-events', 'none');
+  g.setAttribute('class', 'click-anim loading-bar');
+
+  const outer = document.createElementNS(SVG_NS, 'rect');
+  outer.setAttribute('x', barX); outer.setAttribute('y', barY);
+  outer.setAttribute('width', barW); outer.setAttribute('height', barH);
+  outer.setAttribute('fill', 'none');
+  outer.setAttribute('stroke', color);
+  outer.setAttribute('stroke-width', 1.5);
+  g.appendChild(outer);
+
+  const inner = document.createElementNS(SVG_NS, 'rect');
+  inner.setAttribute('x', barX); inner.setAttribute('y', barY);
+  inner.setAttribute('width', 0); inner.setAttribute('height', barH);
+  inner.setAttribute('fill', color);
+  g.appendChild(inner);
+
+  previewSvg.appendChild(g);
+
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    inner.setAttribute('width', barW * t);
+    if (t < 1) requestAnimationFrame(step);
+    else setTimeout(() => g.remove(), 200);
+  }
+  requestAnimationFrame(step);
+}
+
+ckEffect.addEventListener('change', onAnyChange);
+ckColor.addEventListener('input', () => { ckColor.dataset.set = '1'; onAnyChange(); });
+ckColorClr.addEventListener('click', () => { delete ckColor.dataset.set; ckColor.value = '#ffffff'; onAnyChange(); });
+ckDuration.addEventListener('input', () => {
+  ckDurationVal.textContent = `${ckDuration.value} ms`;
+  onAnyChange();
+});
+// Position + size sliders share the same shape — small helper avoids repetition.
+function wireCkSlider(input, valEl) {
+  input.addEventListener('input', () => {
+    input.dataset.set = '1';
+    valEl.textContent = `${Math.round(+input.value * 100)}%`;
+    onAnyChange();
+  });
+}
+wireCkSlider(ckX, ckXVal);
+wireCkSlider(ckY, ckYVal);
+wireCkSlider(ckWidth, ckWidthVal);
+wireCkSlider(ckHeight, ckHeightVal);
+
+ckPreview.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.click || !obj.click.effect) {
+    showToast('pick an effect first', 1600);
+    return;
+  }
+  previewClickAnimation(obj, obj.click);
+});
+
+// ===================== click-sound upload + preview =====================
+// Mirrors the hover-sound upload (Sound tab). Same /api/style/sound endpoint
+// and same data/sounds/ on disk — the click sound is just a different
+// reference (obj.click.sound vs obj.sound).
+async function uploadClickSound(file) {
+  const obj = activeObj();
+  if (!obj) return;
+  if (file.size > 8 * 1024 * 1024) {
+    showToast('file too large (max 8 MB)', 2200);
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('object_id', obj.id);
+  cksDropMsg.textContent = 'uploading…';
+  try {
+    const res = await fetch('/api/style/sound', { method: 'POST', body: fd });
+    if (!res.ok) {
+      showToast('upload failed: ' + (await res.text()), 2800);
+      return;
+    }
+    const data = await res.json();
+    snapshotForUndo();
+    if (!obj.click) obj.click = { effect: 'loading_bar' };  // sound implies a click block
+    obj.click.sound = { src: data.src };
+    if (+cksGain.value !== 1) obj.click.sound.gain = +cksGain.value;
+    // If the user uploaded a sound but never picked an effect, mirror the
+    // dropdown so the click block actually does something.
+    if (!ckEffect.value) {
+      ckEffect.value = 'loading_bar';
+      obj.click.effect = 'loading_bar';
+    }
+    showToast(`uploaded (${(data.bytes/1024).toFixed(0)} KB)`);
+    loadActiveIntoForm();
+    markDirty(); renderList(); renderPreview(); pushDraft();
+  } catch (e) {
+    showToast('upload error: ' + e.message, 2800);
+  } finally {
+    cksDropMsg.textContent = (obj.click && obj.click.sound && obj.click.sound.src)
+      ? 'Drop a new audio file to replace, or click to choose'
+      : 'Drop an audio file here, or click to choose';
+  }
+}
+
+cksDrop.addEventListener('click', () => cksFile.click());
+cksFile.addEventListener('change', () => {
+  const f = cksFile.files && cksFile.files[0];
+  if (f) uploadClickSound(f);
+  cksFile.value = '';
+});
+cksDrop.addEventListener('dragover', (ev) => {
+  ev.preventDefault();
+  cksDrop.style.borderColor = 'var(--accent)';
+  cksDrop.style.color = 'var(--accent)';
+});
+cksDrop.addEventListener('dragleave', () => {
+  cksDrop.style.borderColor = '#444';
+  cksDrop.style.color = 'var(--muted)';
+});
+cksDrop.addEventListener('drop', (ev) => {
+  ev.preventDefault();
+  cksDrop.style.borderColor = '#444';
+  cksDrop.style.color = 'var(--muted)';
+  const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (f) uploadClickSound(f);
+});
+
+cksGain.addEventListener('input', () => {
+  cksGainVal.textContent = (+cksGain.value).toFixed(2);
+  if (cksAudio) cksAudio.volume = +cksGain.value;
+  onAnyChange();
+});
+
+cksPreview.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.click || !obj.click.sound || !obj.click.sound.src) return;
+  if (cksAudio) { cksAudio.pause(); cksAudio = null; }
+  cksAudio = new Audio('/' + obj.click.sound.src);
+  cksAudio.volume = +cksGain.value;
+  cksAudio.addEventListener('ended', () => { cksStop.disabled = true; });
+  cksAudio.play().then(() => { cksStop.disabled = false; })
+              .catch(e => showToast('playback blocked: ' + e.message, 2400));
+});
+cksStop.addEventListener('click', () => {
+  if (cksAudio) { cksAudio.pause(); cksAudio = null; }
+  cksStop.disabled = true;
+});
+cksRemove.addEventListener('click', () => {
+  const obj = activeObj();
+  if (!obj || !obj.click || !obj.click.sound) return;
+  snapshotForUndo();
+  delete obj.click.sound;
+  if (cksAudio) { cksAudio.pause(); cksAudio = null; cksStop.disabled = true; }
+  loadActiveIntoForm();
+  markDirty(); renderList(); renderPreview(); pushDraft();
+});
+
+hlEffect.addEventListener('change', onAnyChange);
+hlColor.addEventListener('input', () => { hlColor.dataset.set = '1'; onAnyChange(); });
+hlColorClr.addEventListener('click', () => { delete hlColor.dataset.set; hlColor.value = '#ffaa55'; onAnyChange(); });
+hlIntensity.addEventListener('input', () => { hlIntensityVal.textContent = (+hlIntensity.value).toFixed(2); onAnyChange(); });
+hlSpeed.addEventListener('input', () => { hlSpeedVal.textContent = (+hlSpeed.value).toFixed(1) + '×'; onAnyChange(); });
+hlFillOpacity.addEventListener('input', () => { hlFillOpacity.dataset.set = '1'; onAnyChange(); });
+hlFillOpacityClr.addEventListener('click', () => { delete hlFillOpacity.dataset.set; hlFillOpacity.value = 0.18; onAnyChange(); });
+hlNotes.addEventListener('input', () => { snapshotForUndo(); commitFormToActive(); markDirty(); pushDraft(); });
+
+// Reset only the currently-visible tab — keeps the other tabs alone.
+document.getElementById('reset-tab').addEventListener('click', () => {
+  const active = document.querySelector('#tabs button.active').dataset.tab;
+  const obj = activeObj();
+  if (!obj) return;
+  snapshotForUndo();
+  if (active === 'outline') { delete obj.appearance.outline; }
+  else if (active === 'fill') { delete obj.appearance.fill; }
+  else if (active === 'image') { delete obj.appearance.image; }
+  else if (active === 'label') { delete obj.appearance.label; }
+  else if (active === 'sound') { obj.sound = {}; }
+  else if (active === 'click') { obj.click = {}; }
+  else if (active === 'highlight') { obj.animation = {}; }
+  loadActiveIntoForm();
+  markDirty();
+  renderList();
+  renderPreview();
+  pushDraft();
+});
+
+// ===================== save =====================
+document.getElementById('save').addEventListener('click', async () => {
+  commitFormToActive();
+  const payload = {
+    objects: objects
+      .filter(o => o.polygon && o.polygon.length >= 3)
+      .map(o => {
+        const out = { id: o.id, label: o.label, polygon: o.polygon };
+        if (o.device_id && o.style !== 'occluder') out.device_id = o.device_id;
+        if (o.style && o.style !== 'normal')       out.style = o.style;
+        if (o.animation && Object.keys(o.animation).length > 0) out.animation = o.animation;
+        if (o.appearance && Object.keys(o.appearance).length > 0) out.appearance = o.appearance;
+        if (o.sound && Object.keys(o.sound).length > 0) out.sound = o.sound;
+        if (o.click && Object.keys(o.click).length > 0) out.click = o.click;
+        if (o.tracking && Object.keys(o.tracking).length > 0) out.tracking = o.tracking;
+        if (o.notes) out.notes = o.notes;
+        return out;
+      }),
+  };
+  const res = await fetch('/api/editor/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    const j = await res.json();
+    showToast(`saved ${j.saved} objects → ${j.path}`);
+    clearDirty();
+  } else {
+    const err = await res.text();
+    showToast('save failed: ' + err, 2800);
+  }
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+document.getElementById('undo-btn').addEventListener('click', undo);
+
+document.addEventListener('keydown', (e) => {
+  // Cmd+Z (Mac) / Ctrl+Z (Windows/Linux). Shift+Z is "redo" — not yet
+  // implemented, so leave it alone for the browser/OS.
+  if (!(e.metaKey || e.ctrlKey) || e.key !== 'z' || e.shiftKey) return;
+  // Native browser undo for text inputs — let the OS keep its IME-friendly
+  // word-level undo behavior, don't hijack inside notes / search fields.
+  const t = e.target;
+  if (t.tagName === 'TEXTAREA') return;
+  if (t.tagName === 'INPUT' && (t.type === 'text' || t.type === 'search')) return;
+  e.preventDefault();
+  undo();
+});
+
+init();
+</script>
+</body>
+</html>

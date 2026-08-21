@@ -1,0 +1,9 @@
+.git
+.venv
+**/__pycache__
+.pytest_cache
+.env
+.DS_Store
+# Per-wall state — supplied by the compose bind-mount, or seeded at start.
+data/objects.json
+data/.kasa_cache.json
