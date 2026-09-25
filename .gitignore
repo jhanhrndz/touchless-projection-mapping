@@ -2,18 +2,21 @@
 .env
 .env.*
 !.env.example
+**/.env
+**/.env.*
+!**/.env.example
 
 # Per-setup calibration + scene state (generated on your machine, not portable)
-data/intrinsics.json
-data/homography.json
-data/bounds.json
-data/objects.json
-data/text_presets.json
-data/.kasa_cache.json
+**/data/intrinsics.json
+**/data/homography.json
+**/data/bounds.json
+**/data/objects.json
+**/data/text_presets.json
+**/data/.kasa_cache.json
 
 # Uploaded per-object overlays and hover sounds (set via /style)
-data/objects/
-data/sounds/
+**/data/objects/
+**/data/sounds/
 
 # Python
 __pycache__/

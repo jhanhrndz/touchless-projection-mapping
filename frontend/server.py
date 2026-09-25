@@ -14,15 +14,16 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-OBJECTS_PATH = ROOT_DIR / "data" / "objects.json"
-EXPERIMENT_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = Path(__file__).resolve().parent
+ROOT_DIR = FRONTEND_DIR.parent
+OBJECTS_PATH = FRONTEND_DIR / "objects.json"
+BACKEND_OBJECTS_PATH = ROOT_DIR / "backend" / "data" / "objects.json"
 PORT = 5050
 
 
 class HandTrackingHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(EXPERIMENT_DIR), **kwargs)
+        super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
 
     def do_GET(self) -> None:
         if self.path == "/api/objects":
@@ -32,9 +33,10 @@ class HandTrackingHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
 
-            if OBJECTS_PATH.exists():
+            target_path = OBJECTS_PATH if OBJECTS_PATH.exists() else BACKEND_OBJECTS_PATH
+            if target_path.exists():
                 try:
-                    data = OBJECTS_PATH.read_bytes()
+                    data = target_path.read_bytes()
                     self.wfile.write(data)
                     return
                 except Exception as e:
