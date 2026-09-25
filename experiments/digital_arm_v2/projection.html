@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proyección en Pared (Digital Arm V2)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000000; color: #ffffff; overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: none; }
+    
+    #stream-view {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      /* SIN transformaciones CSS, la imagen ya viene espejada desde el controlador */
+    }
+
+    #badge {
+      position: absolute; top: 14px; right: 14px; font-family: monospace; font-size: 11px;
+      color: rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.6); padding: 6px 10px;
+      border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.1); pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <img id="stream-view" />
+  <div id="badge">V2 Proyección</div>
+
+  <script>
+    const streamView = document.getElementById('stream-view');
+    const badge = document.getElementById('badge');
+
+    // Conectar por BroadcastChannel al Controlador
+    const projectionChannel = new BroadcastChannel("hand_projection_channel");
+
+    projectionChannel.onmessage = (e) => {
+      // Mostrar el brazo digital directamente (sin dibujar polígonos ni cursor, tal como pidió el usuario)
+      if (e.data.type === "stream") {
+        streamView.src = e.data.image;
+      }
+    };
+
+    // Ocultar badge con H
+    document.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "h") {
+        badge.style.display = badge.style.display === "none" ? "block" : "none";
+      }
+    });
+  </script>
+</body>
+</html>

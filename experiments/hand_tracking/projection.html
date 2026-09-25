@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proyección en Pared (Hand Tracking Twin)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #000000;
+      color: #ffffff;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: none; /* Ocultar cursor del mouse para que solo se vea la luz de la mano */
+    }
+
+    svg {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    /* Estilos base de los polígonos */
+    .polygon-shape {
+      fill: rgba(30, 40, 60, 0.15);
+      stroke: rgba(255, 255, 255, 0.35);
+      stroke-width: 2.5;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+      transition: fill 0.25s ease, stroke 0.25s ease, filter 0.25s ease;
+    }
+
+    /* Estado Hover activado desde la mano */
+    .polygon-shape.hovered {
+      fill: rgba(255, 170, 50, 0.28);
+      stroke: #ffaa32;
+      stroke-width: 4.5;
+      filter: drop-shadow(0 0 16px #ffaa32) drop-shadow(0 0 32px rgba(255, 170, 50, 0.6));
+    }
+
+    /* Estado Clic activado por el pellizco de la mano */
+    .polygon-shape.clicked {
+      fill: rgba(255, 255, 150, 0.65);
+      stroke: #ffffff;
+      stroke-width: 7;
+      filter: drop-shadow(0 0 30px #ffffff) drop-shadow(0 0 50px #ffea70);
+    }
+
+    .polygon-label {
+      font-family: monospace;
+      font-size: 18px;
+      font-weight: bold;
+      fill: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+      transition: fill 0.2s ease;
+    }
+
+    .polygon-label.hovered {
+      fill: #ffaa32;
+      text-shadow: 0 0 10px #ffaa32;
+    }
+
+    /* Cursor de luz proyectado que sigue a tu mano */
+    #projected-cursor {
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    #projected-cursor.active {
+      opacity: 1;
+    }
+
+    /* Pequeño aviso en la esquina (Presiona H para ocultar) */
+    #badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.35);
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <svg id="stage" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+    <defs>
+      <!-- Filtro de resplandor para el cursor de la mano -->
+      <filter id="cursor-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="6" result="blur1" />
+        <feGaussianBlur stdDeviation="15" result="blur2" />
+        <feMerge>
+          <feMergeNode in="blur2" />
+          <feMergeNode in="blur1" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+
+    <!-- Contenedor dinámico de polígonos -->
+    <g id="objects-layer"></g>
+
+    <!-- Ondas expansivas de clic -->
+    <g id="ripples-layer"></g>
+
+    <!-- Cursor de luz proyectado que sigue a tu mano en la pared -->
+    <g id="projected-cursor">
+      <circle id="cursor-outer" cx="0" cy="0" r="18" fill="none" stroke="#58a6ff" stroke-width="2" opacity="0.6" filter="url(#cursor-glow)" />
+      <circle id="cursor-inner" cx="0" cy="0" r="9" fill="#58a6ff" filter="url(#cursor-glow)" />
+    </g>
+  </svg>
+
+  <div id="badge">PROYECCIÓN ACTIVA | F11: Pantalla completa | 'H': Ocultar este texto</div>
+
+  <script>
+    const svg = document.getElementById("stage");
+    const objectsLayer = document.getElementById("objects-layer");
+    const ripplesLayer = document.getElementById("ripples-layer");
+    const cursor = document.getElementById("projected-cursor");
+    const cursorInner = document.getElementById("cursor-inner");
+    const cursorOuter = document.getElementById("cursor-outer");
+    const badge = document.getElementById("badge");
+
+    let objects = [];
+    const polygonElements = new Map(); // id -> { polyEl, labelEl }
+
+    // Ocultar / mostrar badge con tecla H
+    let badgeVisible = true;
+    window.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "h") {
+        badgeVisible = !badgeVisible;
+        badge.style.opacity = badgeVisible ? "1" : "0";
+      }
+    });
+
+    // 1. Cargar objetos reales desde /api/objects
+    async function loadObjects() {
+      try {
+        let res = await fetch("/api/objects", { cache: "no-store" }).catch(() => null);
+        if (!res || !res.ok) {
+          res = await fetch("objects.json", { cache: "no-store" });
+        }
+        objects = await res.json();
+        renderObjects();
+      } catch (err) {
+        console.error("Error cargando objetos:", err);
+      }
+    }
+
+    function renderObjects() {
+      objectsLayer.innerHTML = "";
+      polygonElements.clear();
+
+      for (const obj of objects) {
+        if (!obj.polygon || obj.polygon.length < 3) continue;
+
+        const pointsAttr = obj.polygon.map(([x, y]) => `${x},${y}`).join(" ");
+        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        poly.setAttribute("points", pointsAttr);
+        poly.setAttribute("class", "polygon-shape");
+        poly.dataset.id = obj.id;
+
+        // Si tiene color personalizado en su configuración
+        if (obj.animation && obj.animation.color) {
+          poly.style.stroke = obj.animation.color;
+        }
+
+        // Etiqueta de texto sobre el objeto
+        const [firstX, firstY] = obj.polygon[0];
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", firstX);
+        label.setAttribute("y", Math.max(25, firstY - 12));
+        label.setAttribute("class", "polygon-label");
+        label.textContent = obj.label || obj.device_id || obj.id;
+
+        objectsLayer.appendChild(poly);
+        objectsLayer.appendChild(label);
+        polygonElements.set(obj.id, { poly, label });
+      }
+    }
+
+    // 2. Canal de Sincronización en Tiempo Real con la Ventana de la Cámara
+    const channel = new BroadcastChannel("hand_projection_channel");
+
+    let currentHoverId = null;
+
+    channel.onmessage = (event) => {
+      const data = event.data;
+      if (!data) return;
+
+      if (data.type === "cursor_update") {
+        // Mover el cursor de luz proyectado
+        if (data.active) {
+          cursor.classList.add("active");
+          cursorInner.setAttribute("cx", data.x);
+          cursorInner.setAttribute("cy", data.y);
+          cursorOuter.setAttribute("cx", data.x);
+          cursorOuter.setAttribute("cy", data.y);
+
+          if (data.pinched) {
+            cursorInner.setAttribute("fill", "#ffea70");
+            cursorOuter.setAttribute("stroke", "#ffea70");
+          } else {
+            cursorInner.setAttribute("fill", "#58a6ff");
+            cursorOuter.setAttribute("stroke", "#58a6ff");
+          }
+        } else {
+          cursor.classList.remove("active");
+        }
+
+        // Actualizar estado Hover en el objeto proyectado
+        if (data.hoverId !== currentHoverId) {
+          if (currentHoverId && polygonElements.has(currentHoverId)) {
+            const prev = polygonElements.get(currentHoverId);
+            prev.poly.classList.remove("hovered");
+            prev.label.classList.remove("hovered");
+          }
+
+          currentHoverId = data.hoverId;
+
+          if (currentHoverId && polygonElements.has(currentHoverId)) {
+            const next = polygonElements.get(currentHoverId);
+            next.poly.classList.add("hovered");
+            next.label.classList.add("hovered");
+          }
+        }
+      } else if (data.type === "click_effect") {
+        // Animación de impacto en la pared
+        triggerClickEffect(data.id, data.x, data.y);
+      } else if (data.type === "reload_objects") {
+        loadObjects();
+      }
+    };
+
+    function triggerClickEffect(objId, x, y) {
+      if (polygonElements.has(objId)) {
+        const item = polygonElements.get(objId);
+        item.poly.classList.add("clicked");
+        setTimeout(() => item.poly.classList.remove("clicked"), 350);
+      }
+
+      // Crear onda expansiva en SVG
+      const ripple = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      ripple.setAttribute("cx", x);
+      ripple.setAttribute("cy", y);
+      ripple.setAttribute("r", "10");
+      ripple.setAttribute("fill", "none");
+      ripple.setAttribute("stroke", "#ffffff");
+      ripple.setAttribute("stroke-width", "4");
+      ripple.setAttribute("filter", "url(#cursor-glow)");
+      ripplesLayer.appendChild(ripple);
+
+      let rad = 10;
+      let alpha = 1.0;
+      const anim = setInterval(() => {
+        rad += 8;
+        alpha -= 0.05;
+        ripple.setAttribute("r", rad);
+        ripple.setAttribute("opacity", Math.max(0, alpha));
+        if (alpha <= 0) {
+          clearInterval(anim);
+          ripple.remove();
+        }
+      }, 20);
+    }
+
+    // Inicializar
+    loadObjects();
+  </script>
+</body>
+</html>

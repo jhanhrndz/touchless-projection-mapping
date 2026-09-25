@@ -14,7 +14,7 @@ services:
     # "pull access denied ... may require 'docker login'" line.
     pull_policy: build
     ports:
-      - "8000:8000"
+      - "8080:8000"
     volumes:
       # Persist authored polygons and /style uploads across restarts. The app
       # resolves data/ relative to CWD; everything it writes there is already

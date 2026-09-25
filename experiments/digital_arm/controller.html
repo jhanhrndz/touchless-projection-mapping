@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitor de Control - Brazo Digital</title>
+    <style>
+        body { margin: 0; background: #111; overflow: hidden; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        #workspace { position: relative; width: 1920px; height: 1080px; transform-origin: center; background: #000; border: 2px solid #444; border-radius: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.8); overflow: hidden; }
+        
+        /* El Video en vivo recibido desde el Proyector */
+        #stream-view {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+            transform: scaleX(-1); /* Reflejar igual que el proyector */
+            filter: sepia(100%) saturate(300%) hue-rotate(90deg) drop-shadow(0 0 20px #00ff00) contrast(1.5);
+            opacity: 0.85; /* Un poco transparente para no ocultar la Interfaz */
+            object-fit: fill;
+        }
+
+        svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+        .polygon { fill: rgba(255, 255, 255, 0.1); stroke: rgba(255, 255, 255, 0.5); stroke-width: 3; transition: fill 0.2s, stroke 0.2s, stroke-width 0.2s; }
+        .polygon.hover { fill: rgba(0, 255, 255, 0.2); stroke: #00ffff; stroke-width: 4; filter: drop-shadow(0 0 10px cyan); }
+        .polygon.active { fill: rgba(0, 255, 255, 0.6); stroke: #ffffff; stroke-width: 6; filter: drop-shadow(0 0 20px white); }
+        
+        #cursor { position: absolute; width: 24px; height: 24px; border: 2px solid white; border-radius: 50%; background: cyan; box-shadow: 0 0 15px cyan; transform: translate(-50%, -50%); z-index: 3; pointer-events: none; display: none; transition: background 0.1s, transform 0.1s; }
+        
+        #ui-panel { position: absolute; top: 20px; right: 20px; z-index: 11; background: rgba(0,0,0,0.8); padding: 25px; border-radius: 10px; border: 1px solid #444; width: 250px;}
+        h3 { color: #00ffff; margin-top: 0; text-align: center;}
+        button { background: #00ffff; color: black; border: none; padding: 12px 20px; font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer; box-shadow: 0 0 10px cyan; transition: 0.2s; display: block; width: 100%; margin-bottom: 15px;}
+        button:hover { background: white; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255,255,255,0.5);}
+        
+        #status { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 1px solid #333; }
+        .indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; background: red; }
+        .indicator.on { background: lime; box-shadow: 0 0 10px lime; }
+        .pinch-indicator { color: yellow; font-weight: bold; display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div id="status">
+        <div id="ws-status"><span class="indicator"></span>Hardware (Puerto 8080)</div>
+        <div id="cam-status"><span class="indicator"></span>Conexión con Proyector</div>
+        <div id="pinch-status" class="pinch-indicator">🤌 ¡Clic Realizado!</div>
+    </div>
+    
+    <div id="ui-panel">
+        <h3>Panel de Control</h3>
+        <p style="font-size: 13px; color: #ccc;">1. Asegúrate de que no haya nadie frente a la cámara.</p>
+        <button id="calibrate-btn">2. Calibrar Fondo</button>
+        <p style="font-size: 12px; color: #888;">El sistema aislará todo lo nuevo que entre sobre este fondo.</p>
+    </div>
+    
+    <div id="workspace">
+        <img id="stream-view" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Esperando video..." />
+        <svg id="svg-layer" viewBox="0 0 1920 1080"></svg>
+        <div id="cursor"></div>
+    </div>
+
+    <script>
+        function resizeWorkspace() {
+            const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080) * 0.9;
+            document.getElementById('workspace').style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', resizeWorkspace); resizeWorkspace();
+
+        const ws = new WebSocket(`ws://localhost:8080/ws`);
+        ws.onopen = () => { 
+            document.querySelector('#ws-status .indicator').classList.add('on'); 
+        };
+
+        let polygons = [];
+        async function loadObjects() {
+            try {
+                const response = await fetch('/api/objects');
+                polygons = await response.json();
+                const svgLayer = document.getElementById('svg-layer');
+                for (const obj of polygons) {
+                    if (!obj.polygon || obj.polygon.length < 3) continue;
+                    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    poly.setAttribute('points', obj.polygon.map(v => `${v[0]},${v[1]}`).join(' '));
+                    poly.setAttribute('id', `poly-${obj.id}`);
+                    poly.classList.add('polygon');
+                    svgLayer.appendChild(poly);
+                }
+            } catch (err) {}
+        }
+        loadObjects();
+
+        function isPointInPolygon(point, vs) {
+            let x = point.x, y = point.y, inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                let xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1];
+                if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+            }
+            return inside;
+        }
+
+        const channel = new BroadcastChannel('digital_arm_channel');
+        document.getElementById('calibrate-btn').addEventListener('click', () => {
+            channel.postMessage({ type: 'calibrate' });
+            document.getElementById('calibrate-btn').innerText = "¡Fondo Memorizado!";
+            document.getElementById('calibrate-btn').style.background = 'lime';
+            setTimeout(() => {
+                document.getElementById('calibrate-btn').innerText = "2. Recalibrar Fondo";
+                document.getElementById('calibrate-btn').style.background = '#00ffff';
+            }, 2000);
+        });
+
+        const cursorEl = document.getElementById('cursor');
+        const pinchUI = document.getElementById('pinch-status');
+        const camIndicator = document.querySelector('#cam-status .indicator');
+        const streamView = document.getElementById('stream-view');
+
+        let currentHoveredId = null;
+        let wasPinching = false;
+
+        channel.onmessage = (e) => {
+            const data = e.data;
+            camIndicator.classList.add('on');
+
+            // Actualizar la vista de video
+            if (data.type === 'stream') {
+                streamView.src = data.image;
+            }
+            // Actualizar la lógica del Cursor
+            else if (data.type === 'cursor') {
+                cursorEl.style.display = 'block';
+                cursorEl.style.left = data.x + 'px';
+                cursorEl.style.top = data.y + 'px';
+
+                const isPinching = data.isPinching;
+
+                // 1. Detección ESTRICTA de colisión matemática
+                let foundHover = null;
+                for (const obj of polygons) {
+                    if (isPointInPolygon({x: data.x, y: data.y}, obj.polygon)) {
+                        foundHover = obj; break;
+                    }
+                }
+
+                // 2. Jerarquía de Interfaz (El pellizco solo es "Clic" si está sobre la figura)
+                if (foundHover) {
+                    if (isPinching) {
+                        pinchUI.style.display = 'block';
+                        cursorEl.style.transform = 'translate(-50%, -50%) scale(0.6)';
+                        cursorEl.style.background = 'white';
+                    } else {
+                        pinchUI.style.display = 'none';
+                        cursorEl.style.transform = 'translate(-50%, -50%) scale(1.2)';
+                        cursorEl.style.background = '#00ff00'; 
+                    }
+                } else {
+                    pinchUI.style.display = 'none';
+                    if (isPinching) {
+                        cursorEl.style.transform = 'translate(-50%, -50%) scale(0.8)';
+                        cursorEl.style.background = '#888'; 
+                    } else {
+                        cursorEl.style.transform = 'translate(-50%, -50%) scale(1)';
+                        cursorEl.style.background = '#00ffff';
+                    }
+                }
+
+                // 3. Ejecución del WebSocket
+                if (foundHover) {
+                    if (currentHoveredId !== foundHover.id) {
+                        if (currentHoveredId && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                        document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover');
+                        
+                        currentHoveredId = foundHover.id;
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: true }));
+                        document.getElementById(`poly-${currentHoveredId}`).classList.add('hover');
+                    }
+                    
+                    if (isPinching && !wasPinching) {
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "click", id: currentHoveredId, button: "left" }));
+                        const polyEl = document.getElementById(`poly-${currentHoveredId}`);
+                        polyEl.classList.add('active');
+                        setTimeout(() => polyEl.classList.remove('active'), 200);
+                    }
+                } else {
+                    if (currentHoveredId) {
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                        document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover', 'active');
+                        currentHoveredId = null;
+                    }
+                }
+                wasPinching = isPinching;
+            } else if (data.type === 'cursor_lost') {
+                cursorEl.style.display = 'none';
+                pinchUI.style.display = 'none';
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brazo Digital - Teletransportación</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #00ffff;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+        .card {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+        p {
+            line-height: 1.6;
+            color: #cccccc;
+        }
+        .btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #00d2ff 0%, #3a7bd5 100%);
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 1.1em;
+            border-radius: 30px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.4);
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.6);
+        }
+        .instructions {
+            text-align: left;
+            margin-top: 30px;
+            background-color: #252525;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .instructions li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Brazo Digital: Modo Teletransportación</h1>
+    
+    <div class="card">
+        <p>Este experimento digitaliza completamente tu brazo en lugar de solo rastrear puntos. Utiliza Resta de Fondo (Background Subtraction) para aislar tu silueta física exacta en tiempo real, aplicándole un shader CSS que simula una proyección holográfica o energía de "otra dimensión".</p>
+        
+        <div style="display: flex; gap: 20px; justify-content: center; margin-top: 20px;">
+            <a href="projector.html" target="_blank" class="btn" style="background: linear-gradient(45deg, #00ffff 0%, #0055ff 100%); color: white; text-shadow: 0 0 5px black;">
+                1. Abrir Proyector
+                <div style="font-size: 0.7em; font-weight: normal; margin-top: 5px;">Recorte Real (Resta de Fondo)</div>
+            </a>
+            
+            <a href="controller.html" target="_blank" class="btn">
+                2. Abrir Monitor de Control
+                <div style="font-size: 0.7em; font-weight: normal; margin-top: 5px;">Botones, Figuras y Radares</div>
+            </a>
+        </div>
+        
+        <div class="instructions">
+            <h3>Instrucciones del Sistema Dual:</h3>
+            <ol>
+                <li>Abre el <strong>Proyector</strong> (Botón 1) y arrástralo a tu pantalla secundaria (HDMI). Ponlo en pantalla completa (F11). Esta pestaña enciende la cámara.</li>
+                <li>Abre el <strong>Monitor de Control</strong> (Botón 2) y déjalo en tu pantalla principal.</li>
+                <li>Párate frente al proyector (pero fuera de la cámara) y haz clic en <strong>Calibrar Fondo</strong> desde tu Monitor de Control.</li>
+                <li>¡Entra a escena! Verás en la pared tu brazo convertido en pura energía digital (con las texturas y filtros recuperados), mientras que en tu Monitor verás los polígonos blancos y el radar de tu mano.</li>
+                <li>Pellizca el aire sobre un polígono para encender tu lámpara.</li>
+            </ol>
+            <p><em>Nota: El backend (Docker) debe estar encendido en el puerto 8080.</em></p>
+        </div>
+    </div>
+</body>
+</html>

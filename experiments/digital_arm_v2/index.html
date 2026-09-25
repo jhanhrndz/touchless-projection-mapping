@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controlador de Mano (Cámara + Detección)</title>
+  
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      background: #1f6feb;
+      color: white;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #8b949e;
+      transition: background 0.2s ease;
+    }
+
+    .dot.online { background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+    .dot.offline { background: #f85149; }
+    .dot.active { background: #58a6ff; box-shadow: 0 0 8px #58a6ff; }
+    .dot.pinch { background: #e3b341; box-shadow: 0 0 10px #e3b341; }
+
+    #stage-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #webcam-video {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0.01;
+      pointer-events: none;
+    }
+
+    #display-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .controls-bar {
+      position: absolute;
+      top: 10px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 20;
+    }
+
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 14px;
+      line-height: 1.2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #30363d;
+      border-color: #8b949e;
+    }
+
+    button.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: white;
+    }
+    button.primary:hover {
+      background: #2ea043;
+    }
+
+    button.action {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: white;
+      font-weight: 600;
+    }
+    button.action:hover {
+      background: #388bfd;
+    }
+
+    #debug-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 380px;
+      max-height: 200px;
+      background: rgba(13, 17, 23, 0.88);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      color: #8b949e;
+      overflow-y: auto;
+      z-index: 20;
+      backdrop-filter: blur(8px);
+    }
+
+    #debug-panel .log-title {
+      font-weight: bold;
+      color: #f0f6fc;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .log-entry {
+      margin-bottom: 3px;
+      line-height: 1.4;
+      word-break: break-all;
+    }
+    .log-entry.info { color: #58a6ff; }
+    .log-entry.success { color: #3fb950; }
+    .log-entry.warn { color: #d29922; }
+    .log-entry.error { color: #f85149; font-weight: bold; }
+
+    #toast {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: #1f6feb;
+      color: white;
+      border-radius: 6px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: all 0.2s ease;
+      z-index: 30;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-group">
+      <h2>Controlador de Cámara</h2>
+      <span class="badge">Ventana 1: Laptop</span>
+    </div>
+
+    <div class="status-group">
+      <div class="indicator">
+        <span id="ws-dot" class="dot offline"></span>
+        <span id="ws-label">Docker (8080): Desconectado</span>
+      </div>
+      <div class="indicator">
+        <span id="proj-dot" class="dot offline"></span>
+        <span id="proj-label">Proyección: Esperando...</span>
+      </div>
+      <div class="indicator">
+        <span id="hand-dot" class="dot offline"></span>
+        <span id="hand-label">Mano: Buscando...</span>
+      </div>
+      <div class="indicator">
+        <span id="gesture-dot" class="dot"></span>
+        <span id="gesture-label">Gesto: Libre</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="stage-container">
+    <div class="controls-bar">
+      <button id="open-proj-btn" class="action">🖥️ Abrir Ventana de Proyección</button>
+      <button id="reload-btn">🔄 Recargar Objetos</button>
+    </div>
+
+    <video id="webcam-video" autoplay playsinline muted></video>
+    <!-- Canvas de diseño fijo 1920x1080 para coincidir 1:1 con la proyección -->
+    <canvas id="display-canvas" width="1920" height="1080"></canvas>
+
+    <div id="debug-panel">
+      <div class="log-title">
+        <span>Diagnóstico en vivo</span>
+        <span id="fps-label">0 FPS</span>
+      </div>
+      <div id="debug-logs"></div>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <script>
+    const WS_URL = "ws://localhost:8080/ws";
+    let ws = null;
+    let wsConnected = false;
+
+    const video = document.getElementById("webcam-video");
+    const canvas = document.getElementById("display-canvas");
+    const ctx = canvas.getContext("2d");
+    const wsDot = document.getElementById("ws-dot");
+    const wsLabel = document.getElementById("ws-label");
+    const projDot = document.getElementById("proj-dot");
+    const projLabel = document.getElementById("proj-label");
+    const handDot = document.getElementById("hand-dot");
+    const handLabel = document.getElementById("hand-label");
+    const gestureDot = document.getElementById("gesture-dot");
+    const gestureLabel = document.getElementById("gesture-label");
+    const debugLogs = document.getElementById("debug-logs");
+    const fpsLabel = document.getElementById("fps-label");
+    const toast = document.getElementById("toast");
+    const openProjBtn = document.getElementById("open-proj-btn");
+    const reloadBtn = document.getElementById("reload-btn");
+
+    // Canal de sincronización en tiempo real con la ventana de proyección
+    const projectionChannel = new BroadcastChannel("hand_projection_channel");
+
+    // Objetos cargados dinámicamente desde data/objects.json
+    let objects = [];
+
+    openProjBtn.onclick = () => {
+      window.open("projection.html", "projection_window", "width=1280,height=720");
+      showToast("Ventana de proyección abierta. Arrástrala a tu proyector/pantalla.");
+    };
+
+    reloadBtn.onclick = () => {
+      loadObjects();
+      projectionChannel.postMessage({ type: "reload_objects" });
+      showToast("Objetos recargados.");
+    };
+
+    function addLog(msg, type = "info") {
+      const line = document.createElement("div");
+      line.className = `log-entry ${type}`;
+      const time = new Date().toLocaleTimeString().split(" ")[0];
+      line.textContent = `[${time}] ${msg}`;
+      debugLogs.appendChild(line);
+      debugLogs.scrollTop = debugLogs.scrollHeight;
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    // 1. Cargar objetos dinámicamente desde /api/objects
+    async function loadObjects() {
+      addLog("Cargando objetos desde data/objects.json...");
+      try {
+        let res = await fetch("/api/objects", { cache: "no-store" }).catch(() => null);
+        if (!res || !res.ok) {
+          res = await fetch("objects.json", { cache: "no-store" });
+        }
+        objects = await res.json();
+        addLog(`✓ ${objects.length} objeto(s) cargado(s): ${objects.map(o => o.label || o.id).join(", ")}`, "success");
+      } catch (err) {
+        addLog(`Fallo al cargar objetos: ${err.message}`, "error");
+      }
+    }
+
+    // 2. Conectar WebSocket a Docker
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+          wsConnected = true;
+          wsDot.className = "dot online";
+          wsLabel.textContent = "Docker (8080): Conectado";
+          addLog("✓ WebSocket conectado a Docker (/ws)", "success");
+        };
+
+        ws.onclose = () => {
+          wsConnected = false;
+          wsDot.className = "dot offline";
+          wsLabel.textContent = "Docker (8080): Desconectado";
+          setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = () => {
+          wsConnected = false;
+          wsDot.className = "dot offline";
+        };
+      } catch (err) {
+        addLog(`Error WebSocket: ${err.message}`, "error");
+      }
+    }
+
+    function sendWsDeviceEvent(type, targetId, payload = {}) {
+      if (wsConnected && ws && ws.readyState === WebSocket.OPEN) {
+        const msg = { type, id: targetId, ...payload };
+        ws.send(JSON.stringify(msg));
+      }
+    }
+
+    // Algoritmo Ray-Casting para detectar punto en polígono
+    function isPointInPolygon(point, vs) {
+      const x = point[0], y = point[1];
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i][0], yi = vs[i][1];
+        const xj = vs[j][0], yj = vs[j][1];
+        const intersect = ((yi > y) !== (yj > y)) &&
+                          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    // 3. Inicializar MediaPipe
+    let hands = null;
+    function initMediaPipe() {
+      addLog("Cargando modelo de MediaPipe...");
+      hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+      });
+
+      hands.onResults(onResults);
+    }
+
+    // 4. Iniciar Cámara
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }
+        });
+        video.srcObject = stream;
+        await video.play();
+        addLog(`✓ Cámara iniciada (${video.videoWidth}x${video.videoHeight})`, "success");
+        startLoop();
+      } catch (err) {
+        addLog(`Error en cámara: ${err.message}`, "error");
+      }
+    }
+
+    let isSending = false;
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+
+    function startLoop() {
+      async function process() {
+        if (video.readyState >= 2 && hands && !isSending) {
+          isSending = true;
+          try {
+            await hands.send({ image: video });
+          } catch (e) {}
+          isSending = false;
+
+          frameCount++;
+          const now = Date.now();
+          if (now - lastFpsTime >= 1000) {
+            fpsLabel.textContent = `${frameCount} FPS`;
+            frameCount = 0;
+            lastFpsTime = now;
+          }
+        }
+        requestAnimationFrame(process);
+      }
+      requestAnimationFrame(process);
+    } // <-- Llave restaurada
+
+    let currentHoverObj = null;
+    let isPinched = false;
+    let lastClickTime = 0;
+    const CLICK_COOLDOWN_MS = 650;
+    const ripples = [];
+    
+    let bgData = null;
+    const MASK_W = 640;
+    const MASK_H = 360;
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = MASK_W; maskCanvas.height = MASK_H;
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        maskCtx.drawImage(video, 0, 0, MASK_W, MASK_H);
+        bgData = maskCtx.getImageData(0, 0, MASK_W, MASK_H).data;
+        showToast("✅ Fondo capturado. Entra con el brazo.");
+      }
+    });
+
+    let lastStreamTime = 0;
+
+    function onResults(results) {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (bgData) {
+        // Resta de fondo
+        maskCtx.drawImage(video, 0, 0, MASK_W, MASK_H);
+        const currentImg = maskCtx.getImageData(0, 0, MASK_W, MASK_H);
+        const data = currentImg.data;
+        const THRESHOLD = 35;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            const diffR = Math.abs(data[i] - bgData[i]);
+            const diffG = Math.abs(data[i+1] - bgData[i+1]);
+            const diffB = Math.abs(data[i+2] - bgData[i+2]);
+            if (diffR > THRESHOLD || diffG > THRESHOLD || diffB > THRESHOLD) {
+                data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = 255; 
+            } else {
+                data[i+3] = 0; 
+            }
+        }
+        maskCtx.putImageData(currentImg, 0, 0);
+
+        // Espejo nativo y Filtro
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        
+        ctx.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.filter = 'sepia(100%) saturate(300%) hue-rotate(90deg) contrast(1.5)';
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        ctx.restore(); // Quitar espejo y filtro para dibujar interfaz (polígonos, cursor)
+      } else {
+        // Si no hay fondo calibrado, pantalla de espera
+        ctx.fillStyle = "#0d1117";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#8b949e";
+        ctx.font = "24px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Presiona ESPACIO para calibrar el fondo sin nada frente a la cámara", canvas.width/2, canvas.height/2);
+      }
+
+      // Enviar Stream al Proyector ANTES de dibujar polígonos/cursor
+      const streamNow = Date.now();
+      if (streamNow - lastStreamTime > 40) { // ~25 FPS para fluidez en proyección
+         projectionChannel.postMessage({ type: 'stream', image: canvas.toDataURL('image/jpeg', 0.5) });
+         lastStreamTime = streamNow;
+      }
+
+      let handFound = false;
+      let fingerX = 0, fingerY = 0;
+      let currentPinch = false;
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handFound = true;
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Mapear coordenadas (0..1) al lienzo 1920x1080
+        fingerX = (1 - landmarks[8].x) * canvas.width;
+        fingerY = landmarks[8].y * canvas.height;
+
+        const thumbX = (1 - landmarks[4].x) * canvas.width;
+        const thumbY = landmarks[4].y * canvas.height;
+
+        const pinchDistance = Math.hypot(fingerX - thumbX, fingerY - thumbY);
+        // Distancia escalada a 1920x1080
+        currentPinch = pinchDistance < 75;
+
+        // Ocultamos el esqueleto (drawHandSkeleton) para que solo se vea la silueta verde
+        drawReticle(fingerX, fingerY, currentPinch);
+      }
+
+      // Actualizar estado de mano
+      if (handFound) {
+        handDot.className = "dot active";
+        handLabel.textContent = "Mano: Detectada";
+        if (currentPinch) {
+          gestureDot.className = "dot pinch";
+          gestureLabel.textContent = "Gesto: ¡Pellizco (Click)!";
+        } else {
+          gestureDot.className = "dot";
+          gestureLabel.textContent = "Gesto: Apuntando";
+        }
+      } else {
+        handDot.className = "dot offline";
+        handLabel.textContent = "Mano: Buscando...";
+        gestureDot.className = "dot";
+        gestureLabel.textContent = "Gesto: Ninguno";
+      }
+
+      // Detectar colisión con CUALQUIERA de los objetos del usuario
+      let matchedObj = null;
+      if (handFound) {
+        for (const obj of objects) {
+          if (obj.polygon && isPointInPolygon([fingerX, fingerY], obj.polygon)) {
+            matchedObj = obj;
+            break;
+          }
+        }
+      }
+
+      // Control de Hover
+      const matchedId = matchedObj ? matchedObj.id : null;
+      const prevId = currentHoverObj ? currentHoverObj.id : null;
+
+      if (matchedId !== prevId) {
+        if (currentHoverObj) {
+          const devId = currentHoverObj.device_id || currentHoverObj.id;
+          sendWsDeviceEvent("hover", devId, { enter: false });
+          addLog(`← Salió de ${currentHoverObj.label || currentHoverObj.id}`);
+        }
+        if (matchedObj) {
+          const devId = matchedObj.device_id || matchedObj.id;
+          sendWsDeviceEvent("hover", devId, { enter: true });
+          addLog(`→ Entró a ${matchedObj.label || matchedObj.id} (${devId})`, "info");
+          showToast(`→ Hover: ${matchedObj.label || matchedObj.id}`);
+        }
+        currentHoverObj = matchedObj;
+      }
+
+      // Control de Clic (Pellizco sobre el objeto)
+      const now = Date.now();
+      if (matchedObj && currentPinch && !isPinched && (now - lastClickTime > CLICK_COOLDOWN_MS)) {
+        lastClickTime = now;
+        const devId = matchedObj.device_id || matchedObj.id;
+        sendWsDeviceEvent("click", devId, { button: "left" });
+
+        // Enviar efecto de clic a la ventana de proyección
+        projectionChannel.postMessage({
+          type: "click_effect",
+          id: matchedObj.id,
+          x: fingerX,
+          y: fingerY
+        });
+
+        addLog(`⚡ ¡CLIC EN ${matchedObj.label || matchedObj.id} ENVIADO!`, "success");
+        showToast(`⚡ ¡Clic en ${matchedObj.label || matchedObj.id}!`);
+        ripples.push({ x: fingerX, y: fingerY, r: 12, alpha: 1.0 });
+      }
+      isPinched = currentPinch;
+
+      // Sincronizar en tiempo real con la ventana de proyección (60 fps)
+      projectionChannel.postMessage({
+        type: "cursor_update",
+        active: handFound,
+        x: fingerX,
+        y: fingerY,
+        hoverId: matchedId,
+        pinched: currentPinch
+      });
+
+      // Dibujar todos los objetos en el controlador
+      drawAllObjects(matchedId, now - lastClickTime < 350 ? matchedId : null);
+      drawRipples();
+    }
+
+    function drawAllObjects(hoverId, clickedId) {
+      for (const obj of objects) {
+        if (!obj.polygon || obj.polygon.length < 3) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(obj.polygon[0][0], obj.polygon[0][1]);
+        for (let i = 1; i < obj.polygon.length; i++) {
+          ctx.lineTo(obj.polygon[i][0], obj.polygon[i][1]);
+        }
+        ctx.closePath();
+
+        const isHover = (obj.id === hoverId);
+        const isClicked = (obj.id === clickedId);
+
+        if (isClicked) {
+          ctx.fillStyle = "rgba(255, 255, 120, 0.6)";
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 6;
+          ctx.shadowColor = "#ffffff";
+          ctx.shadowBlur = 30;
+        } else if (isHover) {
+          ctx.fillStyle = "rgba(255, 170, 50, 0.35)";
+          ctx.strokeStyle = "#ffaa32";
+          ctx.lineWidth = 4.5;
+          ctx.shadowColor = "#ffaa32";
+          ctx.shadowBlur = 20;
+        } else {
+          ctx.fillStyle = "rgba(40, 70, 120, 0.2)";
+          ctx.strokeStyle = (obj.animation && obj.animation.color) ? obj.animation.color : "rgba(88, 166, 255, 0.7)";
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+        }
+
+        ctx.fill();
+        ctx.stroke();
+
+        // Etiqueta
+        ctx.save();
+        ctx.font = "bold 18px monospace";
+        ctx.fillStyle = isHover ? "#ffaa32" : "#58a6ff";
+        ctx.shadowBlur = 0;
+        const name = obj.label || obj.device_id || obj.id;
+        ctx.fillText(name, obj.polygon[0][0], Math.max(25, obj.polygon[0][1] - 10));
+        ctx.restore();
+      }
+    }
+
+    function drawReticle(x, y, pinched) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, pinched ? 16 : 10, 0, Math.PI * 2);
+      ctx.fillStyle = pinched ? "#ffea70" : "#58a6ff";
+      ctx.shadowColor = pinched ? "#ffea70" : "#58a6ff";
+      ctx.shadowBlur = 15;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, pinched ? 28 : 20, 0, Math.PI * 2);
+      ctx.strokeStyle = pinched ? "#ffea70" : "rgba(88, 166, 255, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawHandSkeleton(landmarks) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(88, 166, 255, 0.6)";
+      ctx.lineWidth = 3;
+
+      const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4],
+        [0, 5], [5, 6], [6, 7], [7, 8],
+        [5, 9], [9, 10], [10, 11], [11, 12],
+        [9, 13], [13, 14], [14, 15], [15, 16],
+        [13, 17], [17, 18], [18, 19], [19, 20],
+        [0, 17]
+      ];
+
+      for (const [i, j] of connections) {
+        const p1 = landmarks[i];
+        const p2 = landmarks[j];
+        ctx.beginPath();
+        ctx.moveTo((1 - p1.x) * canvas.width, p1.y * canvas.height);
+        ctx.lineTo((1 - p2.x) * canvas.width, p2.y * canvas.height);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "#58a6ff";
+      for (const p of landmarks) {
+        ctx.beginPath();
+        ctx.arc((1 - p.x) * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawRipples() {
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rip = ripples[i];
+        rip.r += 6;
+        rip.alpha -= 0.04;
+        if (rip.alpha <= 0) {
+          ripples.splice(i, 1);
+          continue;
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(rip.x, rip.y, rip.r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 255, 150, ${rip.alpha})`;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Arranque
+    window.addEventListener("DOMContentLoaded", () => {
+      loadObjects();
+      connectWebSocket();
+      initMediaPipe();
+      startCamera();
+    });
+  </script>
+</body>
+</html>

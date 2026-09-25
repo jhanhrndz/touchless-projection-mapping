@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Proyector (Limpio) - Brazo Digital</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body { margin: 0; background: black; overflow: hidden; cursor: none; }
+        #workspace { position: relative; width: 1920px; height: 1080px; transform-origin: center; }
+        video { display: none; }
+        
+        #effect-canvas { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            transform: scaleX(-1); 
+            filter: sepia(100%) saturate(300%) hue-rotate(90deg) drop-shadow(0 0 20px #00ff00) contrast(1.5);
+        }
+
+        /* Cursor nativo flotante (Estilo hand_tracking) */
+        #projected-cursor {
+            position: absolute; width: 18px; height: 18px; 
+            border: 2px solid white; border-radius: 50%; 
+            background: rgba(0, 255, 0, 0.8); 
+            box-shadow: 0 0 15px #00ff00; 
+            transform: translate(-50%, -50%); 
+            z-index: 10; pointer-events: none; 
+            display: none; transition: transform 0.1s, background 0.1s, box-shadow 0.1s;
+        }
+        #projected-cursor.pinching {
+            background: white;
+            transform: translate(-50%, -50%) scale(1.5);
+            box-shadow: 0 0 25px white;
+        }
+    </style>
+</head>
+<body>
+    <div id="workspace">
+        <video id="video-input" autoplay playsinline muted></video>
+        <canvas id="effect-canvas" width="640" height="360"></canvas>
+        <div id="projected-cursor"></div>
+    </div>
+
+    <script>
+        function resizeWorkspace() {
+            const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            document.getElementById('workspace').style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', resizeWorkspace); resizeWorkspace();
+
+        const channel = new BroadcastChannel('digital_arm_channel');
+        const videoEl = document.getElementById('video-input');
+        const canvasEl = document.getElementById('effect-canvas');
+        const canvasCtx = canvasEl.getContext('2d', {willReadFrequently: true});
+        const W = 640; const H = 360;
+
+        let bgData = null;
+        const THRESHOLD = 35; 
+
+        channel.onmessage = (e) => {
+            if (e.data.type === 'calibrate') {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = W; tempCanvas.height = H;
+                tempCanvas.getContext('2d').drawImage(videoEl, 0, 0, W, H);
+                bgData = tempCanvas.getContext('2d').getImageData(0, 0, W, H).data;
+            }
+        };
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = W; maskCanvas.height = H;
+        const maskCtx = maskCanvas.getContext('2d', {willReadFrequently: true});
+
+        function processVisuals(results) {
+            canvasCtx.clearRect(0, 0, W, H);
+            if (!bgData) return;
+
+            maskCtx.drawImage(results.image, 0, 0, W, H);
+            const currentImg = maskCtx.getImageData(0, 0, W, H);
+            const data = currentImg.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const diffR = Math.abs(data[i] - bgData[i]);
+                const diffG = Math.abs(data[i+1] - bgData[i+1]);
+                const diffB = Math.abs(data[i+2] - bgData[i+2]);
+                
+                if (diffR > THRESHOLD || diffG > THRESHOLD || diffB > THRESHOLD) {
+                    data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = 255; 
+                } else {
+                    data[i+3] = 0; 
+                }
+            }
+            maskCtx.putImageData(currentImg, 0, 0);
+
+            canvasCtx.save();
+            canvasCtx.drawImage(maskCanvas, 0, 0);
+            canvasCtx.globalCompositeOperation = 'source-in';
+            canvasCtx.drawImage(results.image, 0, 0, W, H);
+            canvasCtx.restore();
+        }
+
+        let lastStreamTime = 0;
+        const projCursor = document.getElementById('projected-cursor');
+
+        function onResults(results) {
+            processVisuals(results);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const hand = results.multiHandLandmarks[0];
+                const index = hand[8];
+                const thumb = hand[4];
+
+                // Coordenadas lógicas 100% puras sin Offsets para el controlador y la pared
+                const curX = (1 - index.x) * 1920; 
+                const curY = index.y * 1080;
+                const thmX = (1 - thumb.x) * 1920;
+                const thmY = thumb.y * 1080;
+                const isPinching = Math.hypot(curX - thmX, curY - thmY) < 60;
+
+                // Mover el cursor flotante en la pared
+                projCursor.style.display = 'block';
+                projCursor.style.left = curX + 'px';
+                projCursor.style.top = curY + 'px';
+                if (isPinching) projCursor.classList.add('pinching');
+                else projCursor.classList.remove('pinching');
+
+                channel.postMessage({ type: 'cursor', x: curX, y: curY, isPinching: isPinching });
+            } else {
+                projCursor.style.display = 'none';
+                channel.postMessage({ type: 'cursor_lost' });
+            }
+
+            // Transmitir video al Controlador (~15 FPS)
+            const now = Date.now();
+            if (now - lastStreamTime > 66) {
+                channel.postMessage({ type: 'stream', image: canvasEl.toDataURL('image/jpeg', 0.4) });
+                lastStreamTime = now;
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoEl, { onFrame: async () => { await hands.send({image: videoEl}); }, width: 1280, height: 720 });
+        camera.start();
+    </script>
+</body>
+</html>
