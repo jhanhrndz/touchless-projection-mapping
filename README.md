@@ -2,6 +2,10 @@
 
 > Sistema de mapeo de proyección interactiva potenciado por visión artificial en tiempo real, detección de gestos y automatización de dispositivos físicos de hardware.
 
+<p align="center">
+  <img src="assets/touchless-projection-mapping.jpg" alt="Touchless Projection Mapping Cover" width="100%" />
+</p>
+
 ---
 
 ## 🌟 Descripción General
