@@ -6,12 +6,39 @@
   <title>Proyección en Pared (Digital Arm V2)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #000000; color: #ffffff; overflow: hidden; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; cursor: none; }
+    body {
+      background: #000000;
+      color: #ffffff;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      cursor: none;
+    }
     
+    #bg-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      display: none;
+      filter: brightness(70%);
+      transition: filter 0.2s ease;
+    }
+
     #stream-view {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100vw;
       height: 100vh;
       object-fit: contain;
+      z-index: 2;
+      mix-blend-mode: screen;
+      pointer-events: none;
       /* SIN transformaciones CSS, la imagen ya viene espejada desde el controlador */
     }
 
@@ -19,24 +46,73 @@
       position: absolute; top: 14px; right: 14px; font-family: monospace; font-size: 11px;
       color: rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.6); padding: 6px 10px;
       border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.1); pointer-events: none;
+      z-index: 10;
     }
   </style>
 </head>
 <body>
+  <video id="bg-video" autoplay loop muted playsinline></video>
   <img id="stream-view" />
   <div id="badge">V2 Proyección</div>
 
   <script>
     const streamView = document.getElementById('stream-view');
+    const bgVideo = document.getElementById('bg-video');
     const badge = document.getElementById('badge');
+
+    let currentVideoBlobUrl = null;
 
     // Conectar por BroadcastChannel al Controlador
     const projectionChannel = new BroadcastChannel("hand_projection_channel");
 
+    // Notificar al controlador que la ventana de proyección está lista
+    projectionChannel.postMessage({ type: "projection_ready" });
+
     projectionChannel.onmessage = (e) => {
-      // Mostrar el brazo digital directamente (sin dibujar polígonos ni cursor, tal como pidió el usuario)
-      if (e.data.type === "stream") {
-        streamView.src = e.data.image;
+      const data = e.data;
+      if (!data) return;
+
+      // Mostrar el brazo digital directamente
+      if (data.type === "stream") {
+        streamView.src = data.image;
+      } else if (data.type === "set_bg_video") {
+        if (currentVideoBlobUrl) {
+          URL.revokeObjectURL(currentVideoBlobUrl);
+          currentVideoBlobUrl = null;
+        }
+
+        if (data.blob) {
+          currentVideoBlobUrl = URL.createObjectURL(data.blob);
+          bgVideo.src = currentVideoBlobUrl;
+        } else if (data.url) {
+          bgVideo.src = data.url;
+        }
+
+        if (data.brightness !== undefined) {
+          bgVideo.style.filter = `brightness(${data.brightness}%)`;
+        }
+
+        bgVideo.style.display = "block";
+        bgVideo.play().catch(err => console.warn("Auto-play prevenido:", err));
+      } else if (data.type === "toggle_bg_video") {
+        if (bgVideo.paused) {
+          bgVideo.play().catch(err => console.warn("Error al reproducir:", err));
+        } else {
+          bgVideo.pause();
+        }
+      } else if (data.type === "update_bg_video") {
+        if (data.brightness !== undefined) {
+          bgVideo.style.filter = `brightness(${data.brightness}%)`;
+        }
+      } else if (data.type === "clear_bg_video") {
+        bgVideo.pause();
+        bgVideo.removeAttribute("src");
+        bgVideo.load();
+        bgVideo.style.display = "none";
+        if (currentVideoBlobUrl) {
+          URL.revokeObjectURL(currentVideoBlobUrl);
+          currentVideoBlobUrl = null;
+        }
       }
     };
 

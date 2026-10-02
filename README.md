@@ -46,10 +46,11 @@ touchless-projection-mapping/
 * **Visión Artificial:** Detección de puntos articulares (landmarks) a 60 FPS con MediaPipe Hands.
 * **Resta de Fondo Dinámica:** Aísla el brazo humano en tiempo real eliminando el fondo de la habitación con calibración instantánea mediante la tecla `[ESPACIO]`.
 * **Brazo Holográfico:** Filtro digitalizado (verde Matrix) que oculta la textura de la piel para una estética limpia.
+* **Video de Fondo Dinámico:** Soporte para cargar y controlar videos de fondo locales para la proyección en tiempo real, integrando fusión aditiva (`mix-blend-mode: screen`) y deslizador de brillo sin ralentizar el rastreo.
 * **Modelo de Doble Ventana:**
-  * **Controlador (`index.html`):** Para tu laptop. Muestra el video de monitoreo, retícula de puntería y zonas interactivas coloreadas.
-  * **Proyección (`projection.html`):** Para la pared. Fondo negro absoluto que muestra únicamente el brazo verde proyectado.
-* **Gesto de Clic:** Detección de pellizco (*pinch* entre el pulgar y el índice) para interactuar con los polígonos.
+  * **Controlador (`index.html`):** Para la laptop. Muestra monitoreo de cámara, controles de video de fondo, retícula de puntería y estado de dispositivos.
+  * **Proyección (`projection.html`):** Para la pared/proyector. Fondo limpio de video o negro absoluto que proyecta únicamente el brazo verde interactivo.
+* **Gesto de Clic:** Detección de pellizco (*pinch* entre el pulgar y el índice) para interactuar con los polígonos y dispositivos.
 
 ### 2. `backend/` (Automatización de Hardware)
 * **WebSocket Hub:** Recibe eventos de clic y hover emitidos por el frontend.

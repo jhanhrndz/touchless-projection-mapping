@@ -112,6 +112,63 @@
       align-items: center;
       gap: 10px;
       z-index: 20;
+      background: rgba(13, 17, 23, 0.85);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      backdrop-filter: blur(8px);
+    }
+
+    .video-controls-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-left: 10px;
+      border-left: 1px solid #30363d;
+    }
+
+    .slider-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #8b949e;
+      background: #161b22;
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid #21262d;
+    }
+
+    .slider-control input[type="range"] {
+      width: 70px;
+      cursor: pointer;
+      accent-color: #58a6ff;
+    }
+
+    .badge-tag {
+      font-size: 11px;
+      font-family: monospace;
+      padding: 5px 8px;
+      border-radius: 4px;
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      max-width: 140px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-tag.active {
+      color: #3fb950;
+      border-color: rgba(63, 185, 80, 0.4);
+      background: rgba(63, 185, 80, 0.1);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     button {
@@ -245,8 +302,21 @@
 
   <div id="stage-container">
     <div class="controls-bar">
-      <button id="open-proj-btn" class="action">🖥️ Abrir Ventana de Proyección</button>
-      <button id="reload-btn">🔄 Recargar Objetos</button>
+      <button id="open-proj-btn" class="action">🖥️ Abrir Proyección</button>
+      <button id="reload-btn">🔄 Recargar</button>
+
+      <div class="video-controls-group">
+        <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
+        <button id="load-video-btn" title="Cargar video de fondo para la proyección">🎬 Video Fondo</button>
+        <button id="toggle-video-btn" title="Pausar / Reanudar video de fondo" disabled>⏯️</button>
+        <button id="clear-video-btn" title="Quitar video de fondo" disabled>🗑️</button>
+        <div class="slider-control" title="Ajustar brillo del video para mejorar contraste del brazo">
+          <span>☀️</span>
+          <input type="range" id="video-brightness" min="10" max="100" value="70">
+          <span id="brightness-val">70%</span>
+        </div>
+        <span id="video-status-badge" class="badge-tag" title="Estado del video de fondo">Sin video</span>
+      </div>
     </div>
 
     <video id="webcam-video" autoplay playsinline muted></video>
@@ -285,9 +355,42 @@
     const toast = document.getElementById("toast");
     const openProjBtn = document.getElementById("open-proj-btn");
     const reloadBtn = document.getElementById("reload-btn");
+    const bgVideoInput = document.getElementById("bg-video-input");
+    const loadVideoBtn = document.getElementById("load-video-btn");
+    const toggleVideoBtn = document.getElementById("toggle-video-btn");
+    const clearVideoBtn = document.getElementById("clear-video-btn");
+    const videoBrightness = document.getElementById("video-brightness");
+    const brightnessVal = document.getElementById("brightness-val");
+    const videoStatusBadge = document.getElementById("video-status-badge");
 
     // Canal de sincronización en tiempo real con la ventana de proyección
     const projectionChannel = new BroadcastChannel("hand_projection_channel");
+
+    // Estado del video de fondo para la proyección
+    let currentBgVideoFile = null;
+    let currentBgBrightness = 70;
+    let isBgVideoPlaying = true;
+
+    // Escuchar eventos de la ventana de proyección
+    projectionChannel.onmessage = (e) => {
+      if (e.data && e.data.type === "projection_ready") {
+        projDot.className = "dot online";
+        projLabel.textContent = "Proyección: Conectada";
+        addLog("✓ Ventana de proyección conectada", "success");
+        // Si ya hay un video activo cargado, sincronizarlo automáticamente
+        if (currentBgVideoFile) {
+          projectionChannel.postMessage({
+            type: "set_bg_video",
+            blob: currentBgVideoFile,
+            name: currentBgVideoFile.name,
+            brightness: currentBgBrightness
+          });
+          if (!isBgVideoPlaying) {
+            projectionChannel.postMessage({ type: "toggle_bg_video" });
+          }
+        }
+      }
+    };
 
     // Objetos cargados dinámicamente desde data/objects.json
     let objects = [];
@@ -301,6 +404,64 @@
       loadObjects();
       projectionChannel.postMessage({ type: "reload_objects" });
       showToast("Objetos recargados.");
+    };
+
+    // Control de Video de Fondo
+    loadVideoBtn.onclick = () => {
+      bgVideoInput.click();
+    };
+
+    bgVideoInput.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      currentBgVideoFile = file;
+      isBgVideoPlaying = true;
+      videoStatusBadge.textContent = file.name;
+      videoStatusBadge.classList.add("active");
+      videoStatusBadge.title = file.name;
+      toggleVideoBtn.disabled = false;
+      clearVideoBtn.disabled = false;
+
+      projectionChannel.postMessage({
+        type: "set_bg_video",
+        blob: file,
+        name: file.name,
+        brightness: currentBgBrightness
+      });
+
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      addLog(`🎬 Video de fondo cargado: ${file.name} (${sizeMb} MB)`, "success");
+      showToast(`Video de fondo cargado: ${file.name}`);
+    };
+
+    toggleVideoBtn.onclick = () => {
+      if (!currentBgVideoFile) return;
+      isBgVideoPlaying = !isBgVideoPlaying;
+      projectionChannel.postMessage({ type: "toggle_bg_video" });
+      addLog(`🎬 Video de fondo ${isBgVideoPlaying ? "reanudado" : "pausado"}`);
+    };
+
+    clearVideoBtn.onclick = () => {
+      currentBgVideoFile = null;
+      bgVideoInput.value = "";
+      toggleVideoBtn.disabled = true;
+      clearVideoBtn.disabled = true;
+      videoStatusBadge.textContent = "Sin video";
+      videoStatusBadge.classList.remove("active");
+      videoStatusBadge.title = "Sin video activo";
+      projectionChannel.postMessage({ type: "clear_bg_video" });
+      addLog("🎬 Video de fondo removido");
+      showToast("Video de fondo quitado");
+    };
+
+    videoBrightness.oninput = (e) => {
+      currentBgBrightness = parseInt(e.target.value, 10);
+      brightnessVal.textContent = `${currentBgBrightness}%`;
+      projectionChannel.postMessage({
+        type: "update_bg_video",
+        brightness: currentBgBrightness
+      });
     };
 
     function addLog(msg, type = "info") {
