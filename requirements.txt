@@ -1,0 +1,30 @@
+# =============================================================================
+# Touchless Projection Mapping - Core & Runtime Dependencies
+# =============================================================================
+
+# Web Framework & ASGI Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Data Validation & Serialization
+pydantic>=2.9.0
+pyyaml>=6.0.0
+
+# HTTP Client & Requests
+httpx>=0.27.0
+
+# Hardware & IoT Device Integration
+python-kasa>=0.10.2
+
+# Configuration & Multipart Handling
+python-dotenv>=1.0.0
+python-multipart>=0.0.22
+
+# Image Processing (Overlay textures & projection assets)
+pillow>=11.0.0
+
+# =============================================================================
+# Development & Testing (Optional)
+# =============================================================================
+pytest>=8.3.0
+pytest-asyncio>=0.24.0

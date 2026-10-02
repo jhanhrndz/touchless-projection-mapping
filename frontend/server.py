@@ -18,7 +18,8 @@ FRONTEND_DIR = Path(__file__).resolve().parent
 ROOT_DIR = FRONTEND_DIR.parent
 OBJECTS_PATH = FRONTEND_DIR / "objects.json"
 BACKEND_OBJECTS_PATH = ROOT_DIR / "backend" / "data" / "objects.json"
-PORT = 5050
+HOST = os.environ.get("FRONTEND_HOST", "0.0.0.0")
+PORT = int(os.environ.get("FRONTEND_PORT", os.environ.get("PORT", "5050")))
 
 
 class HandTrackingHandler(SimpleHTTPRequestHandler):
@@ -60,7 +61,7 @@ class HandTrackingHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), HandTrackingHandler)
+    server = ThreadingHTTPServer((HOST, PORT), HandTrackingHandler)
     print("=" * 65)
     print(f"  Prototipo Hand Tracking (2 Ventanas)")
     print(f"  Servidor iniciado en: http://localhost:{PORT}")
