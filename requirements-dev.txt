@@ -1,0 +1,11 @@
+# Dependencias de desarrollo, análisis estático y pruebas unitarias
+-r requirements.txt
+
+# Framework de pruebas unitarias y parametrizadas
+pytest==9.1.1
+
+# Linter y formateador ultrarrápido de código Python
+ruff==0.16.10
+
+# Verificador estático de tipado estricto
+mypy==2.4.0

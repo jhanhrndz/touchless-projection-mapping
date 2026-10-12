@@ -24,6 +24,19 @@ python-multipart>=0.0.22
 pillow>=11.0.0
 
 # =============================================================================
+# Vision Engine & Machine Learning (CUDA / CPU)
+# =============================================================================
+# (Para aceleración CUDA en GPU NVIDIA, ejecutar setup.bat o usar whl/cu124)
+torch>=2.4.0
+torchvision>=0.19.0
+numpy>=1.26.0
+opencv-contrib-python>=4.10.0
+ultralytics>=8.3.0
+mediapipe>=0.10.14
+psutil>=5.9.0
+requests>=2.31.0
+
+# =============================================================================
 # Development & Testing (Optional)
 # =============================================================================
 pytest>=8.3.0
