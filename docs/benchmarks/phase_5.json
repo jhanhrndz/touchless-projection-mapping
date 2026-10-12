@@ -1,0 +1,291 @@
+{
+  "timestamp": "2026-10-06 12:01:59",
+  "hardware": {
+    "device": "NVIDIA RTX A1000 6GB Laptop GPU",
+    "cuda_available": true,
+    "python_version": "3.13.2",
+    "torch_version": "2.13.0+cu130"
+  },
+  "configuration": {
+    "source_clip": "clip_a_hand_entry_borders.mp4",
+    "num_frames": 25,
+    "warmup_frames": 10
+  },
+  "modes": {
+    "YOLO11-seg": {
+      "mode": "YOLO11-seg",
+      "source": "clip_a_hand_entry_borders.mp4",
+      "frames_evaluated": 25,
+      "effective_fps": 23.5,
+      "latency_total": {
+        "mean": 42.56,
+        "p95": 60.31,
+        "p99": 61.17,
+        "min": 33.8,
+        "max": 61.42
+      },
+      "stages": {
+        "capture": {
+          "mean": 3.45,
+          "p95": 4.1,
+          "p99": 4.2,
+          "min": 2.91,
+          "max": 4.22
+        },
+        "mediapipe": {
+          "mean": 11.16,
+          "p95": 12.51,
+          "p99": 12.85,
+          "min": 10.16,
+          "max": 12.94
+        },
+        "inference": {
+          "mean": 15.47,
+          "p95": 20.38,
+          "p99": 24.3,
+          "min": 12.62,
+          "max": 25.3
+        },
+        "postprocess": {
+          "mean": 7.59,
+          "p95": 20.9,
+          "p99": 22.91,
+          "min": 2.69,
+          "max": 23.46
+        },
+        "encode": {
+          "mean": 4.9,
+          "p95": 5.58,
+          "p99": 6.11,
+          "min": 4.4,
+          "max": 6.28
+        }
+      },
+      "resources": {
+        "vram_used_mb": 57.4,
+        "vram_peak_mb": 120.7,
+        "cpu_percent": 0.0
+      }
+    },
+    "FastSAM Point-Prompt": {
+      "mode": "FastSAM Point-Prompt",
+      "source": "clip_a_hand_entry_borders.mp4",
+      "frames_evaluated": 25,
+      "effective_fps": 38.9,
+      "latency_total": {
+        "mean": 25.7,
+        "p95": 36.86,
+        "p99": 38.07,
+        "min": 22.4,
+        "max": 38.45
+      },
+      "stages": {
+        "capture": {
+          "mean": 3.25,
+          "p95": 4.44,
+          "p99": 4.64,
+          "min": 2.63,
+          "max": 4.7
+        },
+        "mediapipe": {
+          "mean": 11.87,
+          "p95": 13.25,
+          "p99": 15.57,
+          "min": 10.8,
+          "max": 16.25
+        },
+        "inference": {
+          "mean": 1.1,
+          "p95": 1.31,
+          "p99": 1.58,
+          "min": 0.94,
+          "max": 1.67
+        },
+        "postprocess": {
+          "mean": 4.61,
+          "p95": 16.46,
+          "p99": 17.29,
+          "min": 2.69,
+          "max": 17.53
+        },
+        "encode": {
+          "mean": 4.87,
+          "p95": 6.15,
+          "p99": 6.95,
+          "min": 4.22,
+          "max": 7.2
+        }
+      },
+      "resources": {
+        "vram_used_mb": 57.2,
+        "vram_peak_mb": 120.4,
+        "cpu_percent": 0.0
+      }
+    },
+    "RVM MobileNetV3": {
+      "mode": "RVM MobileNetV3",
+      "source": "clip_a_hand_entry_borders.mp4",
+      "frames_evaluated": 25,
+      "effective_fps": 8.5,
+      "latency_total": {
+        "mean": 118.03,
+        "p95": 221.63,
+        "p99": 222.28,
+        "min": 42.86,
+        "max": 222.33
+      },
+      "stages": {
+        "capture": {
+          "mean": 3.1,
+          "p95": 3.66,
+          "p99": 4.65,
+          "min": 2.42,
+          "max": 4.96
+        },
+        "mediapipe": {
+          "mean": 11.22,
+          "p95": 13.05,
+          "p99": 13.53,
+          "min": 10.01,
+          "max": 13.62
+        },
+        "inference": {
+          "mean": 83.34,
+          "p95": 175.23,
+          "p99": 176.19,
+          "min": 21.53,
+          "max": 176.2
+        },
+        "postprocess": {
+          "mean": 15.8,
+          "p95": 30.41,
+          "p99": 32.29,
+          "min": 3.7,
+          "max": 32.79
+        },
+        "encode": {
+          "mean": 4.58,
+          "p95": 5.66,
+          "p99": 5.92,
+          "min": 4.07,
+          "max": 5.97
+        }
+      },
+      "resources": {
+        "vram_used_mb": 185.0,
+        "vram_peak_mb": 295.1,
+        "cpu_percent": 0.0
+      }
+    },
+    "RVM ResNet50": {
+      "mode": "RVM ResNet50",
+      "source": "clip_a_hand_entry_borders.mp4",
+      "frames_evaluated": 25,
+      "effective_fps": 7.5,
+      "latency_total": {
+        "mean": 134.04,
+        "p95": 228.3,
+        "p99": 230.24,
+        "min": 42.95,
+        "max": 230.4
+      },
+      "stages": {
+        "capture": {
+          "mean": 3.9,
+          "p95": 4.78,
+          "p99": 6.68,
+          "min": 2.6,
+          "max": 7.27
+        },
+        "mediapipe": {
+          "mean": 11.55,
+          "p95": 13.15,
+          "p99": 14.86,
+          "min": 9.76,
+          "max": 15.4
+        },
+        "inference": {
+          "mean": 96.51,
+          "p95": 179.74,
+          "p99": 183.9,
+          "min": 19.65,
+          "max": 185.09
+        },
+        "postprocess": {
+          "mean": 17.18,
+          "p95": 31.77,
+          "p99": 35.39,
+          "min": 3.13,
+          "max": 36.34
+        },
+        "encode": {
+          "mean": 4.9,
+          "p95": 5.91,
+          "p99": 5.93,
+          "min": 4.12,
+          "max": 5.93
+        }
+      },
+      "resources": {
+        "vram_used_mb": 182.6,
+        "vram_peak_mb": 339.1,
+        "cpu_percent": 0.0
+      }
+    },
+    "Resta de Fondo": {
+      "mode": "Resta de Fondo",
+      "source": "clip_a_hand_entry_borders.mp4",
+      "frames_evaluated": 25,
+      "effective_fps": 28.5,
+      "latency_total": {
+        "mean": 35.04,
+        "p95": 51.29,
+        "p99": 52.52,
+        "min": 24.59,
+        "max": 52.75
+      },
+      "stages": {
+        "capture": {
+          "mean": 3.25,
+          "p95": 4.01,
+          "p99": 4.62,
+          "min": 2.53,
+          "max": 4.82
+        },
+        "mediapipe": {
+          "mean": 11.25,
+          "p95": 12.1,
+          "p99": 12.15,
+          "min": 10.08,
+          "max": 12.17
+        },
+        "inference": {
+          "mean": 3.42,
+          "p95": 5.08,
+          "p99": 5.81,
+          "min": 2.55,
+          "max": 6.03
+        },
+        "postprocess": {
+          "mean": 12.15,
+          "p95": 26.43,
+          "p99": 27.22,
+          "min": 2.9,
+          "max": 27.46
+        },
+        "encode": {
+          "mean": 4.97,
+          "p95": 6.02,
+          "p99": 6.53,
+          "min": 4.04,
+          "max": 6.69
+        }
+      },
+      "resources": {
+        "vram_used_mb": 60.7,
+        "vram_peak_mb": 124.0,
+        "cpu_percent": 0.0
+      }
+    }
+  }
+}

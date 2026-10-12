@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centro de Control - Proyección Interactiva Touchless</title>
+    <!-- MediaPipe Hands & ONNX Runtime Web para Modos Web Fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg-dark: #0a0d13;
+            --panel-bg: rgba(16, 22, 34, 0.94);
+            --border-color: #243048;
+            --accent-cyan: #00f2fe;
+            --accent-green: #00ff88;
+            --accent-yellow: #ffd000;
+            --accent-red: #ff3366;
+            --text-main: #e2e8f0;
+            --text-muted: #8492a6;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── HEADER SUPERIOR ── */
+        header {
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 50;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #fff;
+            text-shadow: 0 0 10px var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .screen-tag {
+            background: rgba(0, 242, 254, 0.15);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }
+
+        .pinch-alert {
+            display: none;
+            color: #000;
+            background: var(--accent-yellow);
+            font-weight: 800;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            box-shadow: 0 0 14px var(--accent-yellow);
+            animation: pulse-pinch 0.5s infinite alternate;
+        }
+        @keyframes pulse-pinch {
+            from { transform: scale(0.96); opacity: 0.9; }
+            to { transform: scale(1.05); opacity: 1; }
+        }
+
+        /* Telemetría */
+        .telemetry-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+
+        .stat-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid #1f293d;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .stat-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #475569;
+            transition: all 0.3s;
+        }
+        .stat-dot.online { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .stat-dot.offline { background: var(--accent-red); }
+        .stat-dot.active { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan); }
+        .stat-dot.pinch { background: var(--accent-yellow); box-shadow: 0 0 12px var(--accent-yellow); }
+
+        /* Controles */
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        select.model-dropdown {
+            background: #141b2a;
+            color: #fff;
+            border: 1px solid var(--accent-cyan);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            box-shadow: 0 0 8px rgba(0, 242, 254, 0.25);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        select.model-dropdown:hover {
+            border-color: #fff;
+            box-shadow: 0 0 14px rgba(0, 242, 254, 0.5);
+        }
+
+        button.btn {
+            background: #192236;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s;
+        }
+        button.btn:hover {
+            background: #232f4a;
+            border-color: var(--accent-cyan);
+            color: #fff;
+            transform: translateY(-1px);
+        }
+        button.btn.primary {
+            background: linear-gradient(135deg, #0088cc, #00d2ff);
+            color: #000;
+            border: none;
+            font-weight: 700;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+        }
+        button.btn.primary:hover {
+            background: linear-gradient(135deg, #0099e6, #33dcff);
+            box-shadow: 0 0 16px rgba(0, 210, 255, 0.7);
+        }
+        button.btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        /* ── BARRA SECUNDARIA DE VIDEO DE FONDO ── */
+        .video-toolbar {
+            background: rgba(13, 17, 26, 0.88);
+            border-bottom: 1px solid #1a2333;
+            padding: 6px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            z-index: 40;
+        }
+
+        .video-label {
+            color: var(--accent-cyan);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-control {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #141b28;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid #1f2a3f;
+            color: var(--text-muted);
+        }
+        .slider-control input[type="range"] {
+            width: 80px;
+            cursor: pointer;
+            accent-color: var(--accent-cyan);
+        }
+
+        .badge-tag {
+            font-size: 11px;
+            font-family: monospace;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #141b28;
+            color: var(--text-muted);
+            border: 1px solid #1f2a3f;
+            max-width: 180px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .badge-tag.active {
+            color: var(--accent-green);
+            border-color: rgba(0, 255, 136, 0.4);
+            background: rgba(0, 255, 136, 0.1);
+        }
+
+        /* ── ÁREA DE TRABAJO 1920x1080 ── */
+        #workspace-stage {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #viewport-container {
+            position: relative;
+            width: 1920px;
+            height: 1080px;
+            transform-origin: center center;
+            background: #05070a;
+            border: 1px solid #1a2333;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            overflow: hidden;
+        }
+
+        /* Video de fondo para preview en controlador */
+        #ctrl-bg-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            display: none;
+            filter: brightness(70%);
+        }
+
+        /* Stream en vivo CUDA */
+        #stream-view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            z-index: 1;
+            background: transparent;
+            mix-blend-mode: screen;
+            opacity: 0.95;
+            display: block;
+        }
+
+        /* Canvas para modo Web Fallback */
+        #web-worker-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            mix-blend-mode: screen;
+            display: none;
+        }
+
+        /* Capa SVG para figuras interactivas de objects.json */
+        svg#svg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .target-poly {
+            fill: rgba(0, 242, 254, 0.08);
+            stroke: rgba(0, 242, 254, 0.45);
+            stroke-width: 2.5;
+            stroke-linejoin: round;
+            transition: fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+        }
+        .target-poly.hover {
+            fill: rgba(0, 242, 254, 0.32);
+            stroke: #00f2fe;
+            stroke-width: 4.5;
+            filter: drop-shadow(0 0 14px #00f2fe);
+        }
+        .target-poly.active {
+            fill: rgba(0, 255, 136, 0.7);
+            stroke: #ffffff;
+            stroke-width: 6.5;
+            filter: drop-shadow(0 0 25px #00ff88);
+        }
+
+        .poly-tag {
+            font-size: 16px;
+            font-weight: 700;
+            fill: var(--accent-cyan);
+            letter-spacing: 1px;
+            pointer-events: none;
+            text-shadow: 0 0 8px rgba(0,0,0,0.9);
+        }
+
+        /* Puntero reticular del dedo índice */
+        #cursor {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            background: rgba(0, 242, 254, 0.85);
+            box-shadow: 0 0 18px var(--accent-cyan);
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            pointer-events: none;
+            display: none;
+            transition: background 0.1s, border-color 0.1s, transform 0.08s, box-shadow 0.1s;
+        }
+        #cursor::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            background: #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        #cursor.hovered {
+            background: rgba(0, 255, 136, 0.9);
+            box-shadow: 0 0 22px var(--accent-green);
+            transform: translate(-50%, -50%) scale(1.25);
+        }
+        #cursor.pinching {
+            background: #ffffff;
+            border-color: var(--accent-yellow);
+            box-shadow: 0 0 28px #ffffff;
+            transform: translate(-50%, -50%) scale(0.7);
+        }
+
+        /* Consola de diagnóstico */
+        #diag-drawer {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            width: 440px;
+            max-height: 140px;
+            background: rgba(8, 12, 19, 0.88);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            overflow-y: auto;
+            z-index: 20;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+        }
+        .log-line { margin-bottom: 2px; line-height: 1.3; }
+        .log-line.info { color: var(--accent-cyan); }
+        .log-line.success { color: var(--accent-green); }
+        .log-line.warn { color: var(--accent-yellow); }
+        .log-line.error { color: var(--accent-red); font-weight: bold; }
+
+        /* Toast flotante */
+        #toast {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #142035;
+            border: 1px solid var(--accent-cyan);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: all 0.2s ease;
+            z-index: 60;
+        }
+        #toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+    <!-- ── BARRA SUPERIOR ── -->
+    <header>
+        <div class="brand-section">
+            <div class="brand-logo">
+                <span>⚡ PROYECCIÓN INTERACTIVA</span>
+                <span class="screen-tag">CONTROLADOR (PANTALLA 1)</span>
+            </div>
+            <div class="pinch-alert" id="pinch-alert">🤌 CLIC PELLIZCO</div>
+        </div>
+
+        <div class="telemetry-row">
+            <div class="stat-badge">
+                <span id="ws-dot" class="stat-dot offline"></span>
+                <span id="ws-label">Docker (8080): Conectando...</span>
+            </div>
+            <div class="stat-badge">
+                <span id="proj-dot" class="stat-dot offline"></span>
+                <span id="proj-label">Proyector: Esperando...</span>
+            </div>
+            <div class="stat-badge">
+                <span id="cam-dot" class="stat-dot active"></span>
+                <span id="fps-label">0.0 FPS</span>
+            </div>
+            <div class="stat-badge" id="latency-badge">
+                <span>Latencia: 0.0 ms</span>
+            </div>
+            <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);">
+                <span>GPU: Detectando...</span>
+            </div>
+        </div>
+
+        <div class="controls-group">
+            <!-- SELECTOR DINÁMICO DE MODELOS -->
+            <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
+                <option value="fastsam">1. FastSAM Point-Prompt (CUDA - 33 FPS) [Recomendado]</option>
+                <option value="yolo">2. YOLO11-seg (CUDA - 37 FPS)</option>
+                <option value="rvm_mobilenet">3. RVM MobileNetV3 (CUDA - 34 FPS)</option>
+                <option value="rvm_resnet">4. RVM ResNet50 (CUDA - 28 FPS)</option>
+                <option value="background_subtraction">5. Resta de Fondo (GPU/CPU - 34 FPS)</option>
+                <option value="web_bg_sub">6. Resta de Fondo Web (Navegador - Canvas Fallback)</option>
+                <option value="web_pose">7. MediaPipe Pose (Navegador Fallback v3)</option>
+                <option value="web_rvm">8. RVM ONNX (Navegador Fallback v4)</option>
+            </select>
+
+            <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.2); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar Fondo</button>
+            <button id="arm-only-btn" class="btn" style="background: rgba(0, 255, 136, 0.2); border-color: var(--accent-green); color: var(--accent-green);" title="Aislar exclusivamente manos y brazos (Cero cuerpo / Cero cara)">🦾 Solo Brazos: ON</button>
+            <button id="gf-toggle-btn" class="btn" title="Alternar Fast Guided Filter (Tecla G)">✨ Guided Filter</button>
+            <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Abrir Proyector</button>
+            <button id="reload-obj-btn" class="btn" title="Recargar figuras interactivas desde objects.json">📦 Figuras</button>
+        </div>
+    </header>
+
+    <!-- ── BARRA DE VIDEO DE FONDO (PRESERVADA Y MEJORADA) ── -->
+    <div class="video-toolbar">
+        <div class="video-label">
+            <span>🎬 Video de Fondo para Mapeo:</span>
+        </div>
+        <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
+        <button id="load-video-btn" class="btn">📁 Seleccionar Video</button>
+        <button id="toggle-video-btn" class="btn" disabled title="Pausar / Reanudar video en proyector">⏯️ Pausar/Reanudar</button>
+        <button id="clear-video-btn" class="btn" disabled title="Quitar video de fondo">🗑️ Quitar</button>
+        <div class="slider-control" title="Ajustar brillo del video para máxima legibilidad óptica del brazo holográfico">
+            <span>☀️ Brillo:</span>
+            <input type="range" id="video-brightness" min="10" max="100" value="70">
+            <span id="brightness-val">70%</span>
+        </div>
+        <span id="video-status-badge" class="badge-tag">Sin video activo</span>
+    </div>
+
+    <!-- ── ESCENARIO 1920x1080 ── -->
+    <div id="workspace-stage">
+        <div id="viewport-container">
+            <!-- Video de fondo reflejado en el controlador -->
+            <video id="ctrl-bg-video" autoplay loop muted playsinline></video>
+            <!-- Stream en vivo procesado por el Motor CUDA -->
+            <img id="stream-view" src="/stream" alt="Iniciando stream CUDA..." />
+            <!-- Canvas de renderizado para modos Web Fallback -->
+            <canvas id="web-worker-canvas" width="1920" height="1080"></canvas>
+            <!-- Capa SVG para las figuras interactivas -->
+            <svg id="svg-layer" viewBox="0 0 1920 1080"></svg>
+            <!-- Cursor / Retícula holográfica en la punta del dedo índice -->
+            <div id="cursor"></div>
+        </div>
+
+        <!-- Consola de diagnóstico -->
+        <div id="diag-drawer">
+            <div id="diag-logs"></div>
+        </div>
+
+        <div id="toast"></div>
+    </div>
+
+    <script>
+        // ─────────────────────────────────────────────────────────────────────
+        //  CONTROLADOR TOUCHLESS: GESTIÓN DE MODELOS, VIDEO Y PROYECCIÓN DUAL
+        // ─────────────────────────────────────────────────────────────────────
+
+        const viewport = document.getElementById('viewport-container');
+        const ctrlBgVideo = document.getElementById('ctrl-bg-video');
+        const streamView = document.getElementById('stream-view');
+        const webCanvas = document.getElementById('web-worker-canvas');
+        const webCtx = webCanvas.getContext('2d');
+        const svgLayer = document.getElementById('svg-layer');
+        const cursorEl = document.getElementById('cursor');
+        const pinchAlert = document.getElementById('pinch-alert');
+        const diagLogs = document.getElementById('diag-logs');
+        const toast = document.getElementById('toast');
+
+        const wsDot = document.getElementById('ws-dot');
+        const wsLabel = document.getElementById('ws-label');
+        const projDot = document.getElementById('proj-dot');
+        const projLabel = document.getElementById('proj-label');
+        const camDot = document.getElementById('cam-dot');
+        const fpsLabel = document.getElementById('fps-label');
+        const latencyBadge = document.getElementById('latency-badge');
+        const gpuBadge = document.getElementById('gpu-badge');
+
+        const modelSelect = document.getElementById('model-select');
+        const calibrateBtn = document.getElementById('calibrate-btn');
+        const armOnlyBtn = document.getElementById('arm-only-btn');
+        const gfToggleBtn = document.getElementById('gf-toggle-btn');
+        const openProjBtn = document.getElementById('open-proj-btn');
+        const reloadObjBtn = document.getElementById('reload-obj-btn');
+
+        // Controles de Video
+        const bgVideoInput = document.getElementById('bg-video-input');
+        const loadVideoBtn = document.getElementById('load-video-btn');
+        const toggleVideoBtn = document.getElementById('toggle-video-btn');
+        const clearVideoBtn = document.getElementById('clear-video-btn');
+        const videoBrightness = document.getElementById('video-brightness');
+        const brightnessVal = document.getElementById('brightness-val');
+        const videoStatusBadge = document.getElementById('video-status-badge');
+
+        // Canales BroadcastChannel (estándar y retro-compatibilidad)
+        const primaryChannel = new BroadcastChannel('hand_projection_channel');
+        const legacyChannel = new BroadcastChannel('digital_arm_channel');
+
+        let isWebMode = false;
+        let armOnlyActive = true;
+        let guidedFilterActive = false;
+        let polygons = [];
+        let currentHoveredId = null;
+        let wasPinching = false;
+        let sseSource = null;
+
+        // Estado del Video de Fondo
+        let currentBgVideoFile = null;
+        let currentBgBrightness = 70;
+        let isBgVideoPlaying = true;
+        let ctrlVideoBlobUrl = null;
+
+        // Autoescalado responsivo manteniendo relación 16:9 exacta
+        function resizeViewport() {
+            const scale = Math.min(window.innerWidth / 1920, (window.innerHeight - 95) / 1080) * 0.98;
+            viewport.style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', resizeViewport);
+        resizeViewport();
+
+        function log(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `log-line ${type}`;
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            div.textContent = `[${time}] ${msg}`;
+            diagLogs.appendChild(div);
+            diagLogs.scrollTop = diagLogs.scrollHeight;
+        }
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('show');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.remove('show'), 2200);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  1. SINCRONIZACIÓN CON LA VENTANA DE PROYECCIÓN
+        // ─────────────────────────────────────────────────────────────────────
+        function handleProjectionReady() {
+            projDot.className = 'stat-dot online';
+            projLabel.textContent = 'Proyector: Conectado';
+            log('✓ Ventana de proyección conectada en tiempo real', 'success');
+            showToast('Proyector conectado');
+
+            // Sincronizar video de fondo activo inmediatamente
+            if (currentBgVideoFile) {
+                const msg = {
+                    type: 'set_bg_video',
+                    blob: currentBgVideoFile,
+                    name: currentBgVideoFile.name,
+                    brightness: currentBgBrightness
+                };
+                primaryChannel.postMessage(msg);
+                legacyChannel.postMessage(msg);
+                if (!isBgVideoPlaying) {
+                    primaryChannel.postMessage({ type: 'toggle_bg_video' });
+                    legacyChannel.postMessage({ type: 'toggle_bg_video' });
+                }
+            }
+
+            // Sincronizar modo de visualización activo
+            const modeMsg = {
+                type: 'mode_change',
+                model: modelSelect.value,
+                isWeb: isWebMode
+            };
+            primaryChannel.postMessage(modeMsg);
+            legacyChannel.postMessage(modeMsg);
+        }
+
+        primaryChannel.onmessage = (e) => {
+            if (e.data && e.data.type === 'projection_ready') handleProjectionReady();
+        };
+        legacyChannel.onmessage = (e) => {
+            if (e.data && e.data.type === 'projection_ready') handleProjectionReady();
+        };
+
+        openProjBtn.onclick = () => {
+            window.open('projector.html', 'ProyectorPared', 'width=1920,height=1080');
+            showToast('Abriendo ventana de proyección');
+        };
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  2. CONTROLES DE VIDEO DE FONDO (PRESERVADO Y MEJORADO)
+        // ─────────────────────────────────────────────────────────────────────
+        loadVideoBtn.onclick = () => bgVideoInput.click();
+
+        bgVideoInput.onchange = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            currentBgVideoFile = file;
+            isBgVideoPlaying = true;
+            videoStatusBadge.textContent = file.name;
+            videoStatusBadge.classList.add('active');
+            videoStatusBadge.title = file.name;
+            toggleVideoBtn.disabled = false;
+            clearVideoBtn.disabled = false;
+
+            // Cargar en vista local del controlador
+            if (ctrlVideoBlobUrl) URL.revokeObjectURL(ctrlVideoBlobUrl);
+            ctrlVideoBlobUrl = URL.createObjectURL(file);
+            ctrlBgVideo.src = ctrlVideoBlobUrl;
+            ctrlBgVideo.style.filter = `brightness(${currentBgBrightness}%)`;
+            ctrlBgVideo.style.display = 'block';
+            ctrlBgVideo.play().catch(() => {});
+
+            // Transmitir al proyector
+            const msg = {
+                type: 'set_bg_video',
+                blob: file,
+                name: file.name,
+                brightness: currentBgBrightness
+            };
+            primaryChannel.postMessage(msg);
+            legacyChannel.postMessage(msg);
+
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+            log(`🎬 Video de fondo cargado: ${file.name} (${sizeMb} MB)`, 'success');
+            showToast(`Video cargado: ${file.name}`);
+        };
+
+        toggleVideoBtn.onclick = () => {
+            if (!currentBgVideoFile) return;
+            isBgVideoPlaying = !isBgVideoPlaying;
+            if (isBgVideoPlaying) {
+                ctrlBgVideo.play().catch(() => {});
+            } else {
+                ctrlBgVideo.pause();
+            }
+            primaryChannel.postMessage({ type: 'toggle_bg_video' });
+            legacyChannel.postMessage({ type: 'toggle_bg_video' });
+            log(`🎬 Video de fondo ${isBgVideoPlaying ? 'reanudado' : 'pausado'}`);
+        };
+
+        clearVideoBtn.onclick = () => {
+            currentBgVideoFile = null;
+            bgVideoInput.value = '';
+            toggleVideoBtn.disabled = true;
+            clearVideoBtn.disabled = true;
+            videoStatusBadge.textContent = 'Sin video activo';
+            videoStatusBadge.classList.remove('active');
+
+            ctrlBgVideo.pause();
+            ctrlBgVideo.removeAttribute('src');
+            ctrlBgVideo.load();
+            ctrlBgVideo.style.display = 'none';
+            if (ctrlVideoBlobUrl) {
+                URL.revokeObjectURL(ctrlVideoBlobUrl);
+                ctrlVideoBlobUrl = null;
+            }
+
+            primaryChannel.postMessage({ type: 'clear_bg_video' });
+            legacyChannel.postMessage({ type: 'clear_bg_video' });
+            log('🎬 Video de fondo retirado');
+            showToast('Video de fondo quitado');
+        };
+
+        videoBrightness.oninput = (e) => {
+            currentBgBrightness = parseInt(e.target.value, 10);
+            brightnessVal.textContent = `${currentBgBrightness}%`;
+            ctrlBgVideo.style.filter = `brightness(${currentBgBrightness}%)`;
+            primaryChannel.postMessage({
+                type: 'update_bg_video',
+                brightness: currentBgBrightness
+            });
+            legacyChannel.postMessage({
+                type: 'update_bg_video',
+                brightness: currentBgBrightness
+            });
+        };
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  3. CONEXIÓN WEBSOCKET A DOCKER (PUERTO 8080)
+        // ─────────────────────────────────────────────────────────────────────
+        let ws = null;
+        function initWebSocket() {
+            try {
+                ws = new WebSocket('ws://localhost:8080/ws');
+                ws.onopen = () => {
+                    wsDot.className = 'stat-dot online';
+                    wsLabel.textContent = 'Docker (8080): Conectado';
+                    log('✓ Conectado a Docker WebSocket (puerto 8080)', 'success');
+                };
+                ws.onclose = () => {
+                    wsDot.className = 'stat-dot offline';
+                    wsLabel.textContent = 'Docker (8080): Desconectado';
+                    setTimeout(initWebSocket, 3000);
+                };
+                ws.onerror = () => {
+                    wsDot.className = 'stat-dot offline';
+                };
+            } catch (err) {
+                wsDot.className = 'stat-dot offline';
+            }
+        }
+        initWebSocket();
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  4. CARGA DE FIGURAS INTERACTIVAS (data/objects.json)
+        // ─────────────────────────────────────────────────────────────────────
+        async function loadObjects() {
+            try {
+                const res = await fetch('/api/objects', { cache: 'no-store' });
+                polygons = await res.json();
+                svgLayer.innerHTML = '';
+
+                for (const obj of polygons) {
+                    if (!obj.polygon || obj.polygon.length < 3) continue;
+
+                    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    poly.setAttribute('points', obj.polygon.map(p => `${p[0]},${p[1]}`).join(' '));
+                    poly.setAttribute('id', `poly-${obj.id}`);
+                    poly.classList.add('target-poly');
+                    svgLayer.appendChild(poly);
+
+                    let cx = 0, cy = 0;
+                    for (const p of obj.polygon) { cx += p[0]; cy += p[1]; }
+                    cx /= obj.polygon.length; cy /= obj.polygon.length;
+
+                    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    label.setAttribute('x', cx);
+                    label.setAttribute('y', cy);
+                    label.setAttribute('text-anchor', 'middle');
+                    label.setAttribute('dominant-baseline', 'middle');
+                    label.classList.add('poly-tag');
+                    label.textContent = obj.label || obj.id;
+                    svgLayer.appendChild(label);
+                }
+                log(`✓ ${polygons.length} figura(s) cargada(s) en pantalla`, 'success');
+            } catch (e) {
+                log(`Error cargando figuras: ${e.message}`, 'error');
+            }
+        }
+        loadObjects();
+        reloadObjBtn.onclick = () => { loadObjects(); showToast('Figuras recargadas'); };
+
+        function isPointInPolygon(point, vs) {
+            let x = point.x, y = point.y, inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                let xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1];
+                if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+            }
+            return inside;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  5. GESTIÓN DEL CURSOR Y COLISIONES CON OBJETOS
+        // ─────────────────────────────────────────────────────────────────────
+        function processCursor(x, y, isPinching) {
+            camDot.className = 'stat-dot active';
+            cursorEl.style.display = 'block';
+            cursorEl.style.left = x + 'px';
+            cursorEl.style.top = y + 'px';
+
+            let hoveredObj = null;
+            for (const obj of polygons) {
+                if (isPointInPolygon({ x, y }, obj.polygon)) {
+                    hoveredObj = obj;
+                    break;
+                }
+            }
+
+            if (hoveredObj) {
+                cursorEl.classList.add('hovered');
+            } else {
+                cursorEl.classList.remove('hovered');
+            }
+
+            if (isPinching) {
+                cursorEl.classList.add('pinching');
+                pinchAlert.style.display = 'block';
+            } else {
+                cursorEl.classList.remove('pinching');
+                pinchAlert.style.display = 'none';
+            }
+
+            if (hoveredObj) {
+                if (currentHoveredId !== hoveredObj.id) {
+                    if (currentHoveredId && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                    }
+                    document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover');
+
+                    currentHoveredId = hoveredObj.id;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: true }));
+                    }
+                    document.getElementById(`poly-${currentHoveredId}`)?.classList.add('hover');
+                    log(`Dedo sobre figura: ${hoveredObj.label || hoveredObj.id}`, 'info');
+                }
+
+                if (isPinching && !wasPinching) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "click", id: currentHoveredId, button: "left" }));
+                    }
+                    const polyEl = document.getElementById(`poly-${currentHoveredId}`);
+                    if (polyEl) {
+                        polyEl.classList.add('active');
+                        setTimeout(() => polyEl.classList.remove('active'), 250);
+                    }
+                    log(`💥 CLIC en figura: ${hoveredObj.label || hoveredObj.id}`, 'success');
+                    showToast(`¡Clic en ${hoveredObj.label || hoveredObj.id}!`);
+                }
+            } else {
+                if (currentHoveredId) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                    }
+                    document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover', 'active');
+                    currentHoveredId = null;
+                }
+            }
+            wasPinching = isPinching;
+        }
+
+        function processCursorLost() {
+            cursorEl.style.display = 'none';
+            pinchAlert.style.display = 'none';
+            if (currentHoveredId) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                }
+                document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover', 'active');
+                currentHoveredId = null;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  6. INTEGRACIÓN SSE PARA CURSOR DE ALTA VELOCIDAD (/cursor_stream)
+        // ─────────────────────────────────────────────────────────────────────
+        function startCursorSSE() {
+            if (sseSource) sseSource.close();
+            try {
+                sseSource = new EventSource('/cursor_stream');
+                sseSource.onmessage = (e) => {
+                    const data = JSON.parse(e.data);
+                    if (data.detected) {
+                        processCursor(data.x, data.y, data.is_pinching);
+                    } else {
+                        processCursorLost();
+                    }
+                };
+                sseSource.onerror = () => {
+                    if (sseSource) { sseSource.close(); sseSource = null; }
+                };
+            } catch (err) {}
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  7. TELEMETRÍA EN TIEMPO REAL (/api/status)
+        // ─────────────────────────────────────────────────────────────────────
+        async function pollTelemetry() {
+            try {
+                const res = await fetch('/api/status', { cache: 'no-store' });
+                if (res.ok) {
+                    const st = await res.json();
+                    fpsLabel.textContent = `${st.fps} FPS`;
+                    latencyBadge.textContent = `Latencia: ${st.latency_ms} ms`;
+                    gpuBadge.textContent = `GPU: ${st.device} (${st.vram_mb} MB)`;
+                    guidedFilterActive = st.guided_filter;
+                    gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.2)' : '';
+
+                    if (!isWebMode && st.active_model && modelSelect.value !== st.active_model) {
+                        for (let opt of modelSelect.options) {
+                            if (opt.value === st.active_model) {
+                                modelSelect.value = opt.value;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        setInterval(pollTelemetry, 1000);
+        pollTelemetry();
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  8. CONMUTACIÓN DE MODELOS Y AJUSTES
+        // ─────────────────────────────────────────────────────────────────────
+        async function calibrateBackground() {
+            try {
+                await fetch('/api/calibrate', { method: 'POST' });
+            } catch (e) {}
+            if (offCtx) {
+                try {
+                    const snap = offCtx.getImageData(0, 0, W_WEB, H_WEB);
+                    bgData = new Uint8ClampedArray(snap.data);
+                } catch (e) {}
+            }
+            showToast('✓ Fondo Calibrado. Entra a escena');
+            log('📸 Fotograma de fondo capturado como referencia limpia.', 'success');
+        }
+
+        calibrateBtn.onclick = calibrateBackground;
+
+        armOnlyBtn.onclick = async () => {
+            armOnlyActive = !armOnlyActive;
+            armOnlyBtn.textContent = armOnlyActive ? '🦾 Solo Brazos: ON' : '👤 Cuerpo Completo';
+            armOnlyBtn.style.color = armOnlyActive ? 'var(--accent-green)' : 'var(--accent-yellow)';
+            armOnlyBtn.style.borderColor = armOnlyActive ? 'var(--accent-green)' : 'var(--accent-yellow)';
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ arm_only: armOnlyActive })
+                });
+            } catch (e) {}
+            showToast(armOnlyActive ? 'Modo: Solo Manos y Brazos' : 'Modo: Cuerpo Completo');
+            log(`Filtro anatómico: ${armOnlyActive ? 'Solo Manos y Brazos' : 'Cuerpo Completo'}`, 'info');
+        };
+
+        gfToggleBtn.onclick = async () => {
+            guidedFilterActive = !guidedFilterActive;
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ guided_filter: guidedFilterActive })
+            });
+            showToast(`Guided Filter: ${guidedFilterActive ? 'Activado' : 'Desactivado'}`);
+            log(`✨ Fast Guided Filter: ${guidedFilterActive ? 'Activado' : 'Desactivado'}`, 'info');
+        };
+
+        modelSelect.addEventListener('change', async () => {
+            const selected = modelSelect.value;
+            isWebMode = selected.startsWith('web_');
+
+            log(`Cambiando motor a: ${selected}...`, 'info');
+            const msg = { type: 'mode_change', model: selected, isWeb: isWebMode };
+            primaryChannel.postMessage(msg);
+            legacyChannel.postMessage(msg);
+
+            if (isWebMode) {
+                streamView.style.display = 'none';
+                webCanvas.style.display = 'block';
+                startWebDifferencingEngine();
+                showToast(`Modo Navegador Web: ${selected}`);
+            } else {
+                stopWebDifferencingEngine();
+                webCanvas.style.display = 'none';
+                streamView.style.display = 'block';
+                streamView.src = '/stream?t=' + Date.now();
+
+                const res = await fetch('/api/model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: selected })
+                });
+                if (res.ok) {
+                    startCursorSSE();
+                    showToast(`Motor CUDA Activo: ${selected}`);
+                    log(`✓ Motor CUDA activo: ${selected}`, 'success');
+                }
+            }
+        });
+
+        // Atajos de teclado: Espacio/C (Calibrar), B (Siguiente modelo), G (Guided Filter)
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            if (e.code === 'Space' || e.key === 'c' || e.key === 'C') {
+                e.preventDefault();
+                calibrateBackground();
+            } else if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault();
+                const nextIdx = (modelSelect.selectedIndex + 1) % modelSelect.options.length;
+                modelSelect.selectedIndex = nextIdx;
+                modelSelect.dispatchEvent(new Event('change'));
+            } else if (e.key === 'g' || e.key === 'G') {
+                e.preventDefault();
+                gfToggleBtn.click();
+            } else if (e.key === 'v' || e.key === 'V') {
+                e.preventDefault();
+                toggleVideoBtn.click();
+            }
+        });
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  9. MOTOR FALLBACK DE NAVEGADOR WEB (Resta de Fondo & MediaPipe)
+        // ─────────────────────────────────────────────────────────────────────
+        let webRunning = false;
+        const W_WEB = 640, H_WEB = 360;
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = W_WEB; offCanvas.height = H_WEB;
+        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+        let webHands = null;
+        let lastHandLandmarks = null;
+        let bgData = null;
+        const bgThreshold = 35;
+
+        const webFrameLoader = new Image();
+        webFrameLoader.crossOrigin = 'anonymous';
+        let webFrameBusy = false;
+
+        async function startWebDifferencingEngine() {
+            webRunning = true;
+            if (!webHands) {
+                try {
+                    webHands = new Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+                    webHands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.25, minTrackingConfidence: 0.25 });
+                    webHands.onResults((results) => {
+                        if (!webRunning) return;
+                        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                            lastHandLandmarks = results.multiHandLandmarks;
+                            const hl = results.multiHandLandmarks[0];
+                            const idx = hl[8], thm = hl[4];
+                            const curX = idx.x * 1920, curY = idx.y * 1080;
+                            const thmX = thm.x * 1920, thmY = thm.y * 1080;
+                            const isPinching = Math.hypot(curX - thmX, curY - thmY) < 65;
+                            processCursor(curX, curY, isPinching);
+                        } else {
+                            lastHandLandmarks = null;
+                            processCursorLost();
+                        }
+                    });
+                } catch (eHand) {
+                    console.warn('MediaPipe hands web:', eHand);
+                }
+            }
+            fetchNextWebFrame();
+        }
+
+        function stopWebDifferencingEngine() {
+            webRunning = false;
+            webFrameBusy = false;
+        }
+
+        function fetchNextWebFrame() {
+            if (!webRunning || !isWebMode || webFrameBusy) return;
+            webFrameBusy = true;
+            webFrameLoader.src = '/api/frame?t=' + performance.now();
+        }
+
+        webFrameLoader.onload = async () => {
+            if (!webRunning || !isWebMode) {
+                webFrameBusy = false;
+                return;
+            }
+
+            try {
+                offCtx.drawImage(webFrameLoader, 0, 0, W_WEB, H_WEB);
+                const currentImg = offCtx.getImageData(0, 0, W_WEB, H_WEB);
+                const data = currentImg.data;
+
+                if (webHands) {
+                    try { await webHands.send({ image: offCanvas }); } catch (e) {}
+                }
+
+                if (!bgData) {
+                    bgData = new Uint8ClampedArray(data);
+                    log('📸 Fotograma inicial capturado como fondo.', 'info');
+                }
+
+                const totalPix = W_WEB * H_WEB;
+                if (armOnlyActive && (!lastHandLandmarks || lastHandLandmarks.length === 0)) {
+                    data.fill(0);
+                    offCtx.putImageData(currentImg, 0, 0);
+                    webCtx.clearRect(0, 0, 1920, 1080);
+                    const blackJpeg = webCanvas.toDataURL('image/jpeg', 0.5);
+                    primaryChannel.postMessage({ type: 'stream', image: blackJpeg });
+                    legacyChannel.postMessage({ type: 'stream', image: blackJpeg });
+                    return;
+                }
+
+                const diffMask = new Uint8Array(totalPix);
+                for (let p = 0; p < totalPix; p++) {
+                    const i = p * 4;
+                    const dr = Math.abs(data[i]     - bgData[i]);
+                    const dg = Math.abs(data[i + 1] - bgData[i + 1]);
+                    const db = Math.abs(data[i + 2] - bgData[i + 2]);
+                    if (Math.max(dr, dg, db) > bgThreshold) diffMask[p] = 1;
+                }
+
+                let foregroundMask = diffMask;
+                if (armOnlyActive && lastHandLandmarks && lastHandLandmarks.length > 0) {
+                    const visited = new Uint8Array(totalPix);
+                    const queue = new Int32Array(totalPix);
+                    let head = 0, tail = 0;
+
+                    for (const lms of lastHandLandmarks) {
+                        for (let k = 0; k < lms.length; k++) {
+                            const sx = Math.min(W_WEB - 1, Math.max(0, Math.round(lms[k].x * W_WEB)));
+                            const sy = Math.min(H_WEB - 1, Math.max(0, Math.round(lms[k].y * H_WEB)));
+                            for (let dy = -2; dy <= 2; dy++) {
+                                for (let dx = -2; dx <= 2; dx++) {
+                                    const nx = sx + dx, ny = sy + dy;
+                                    if (nx >= 0 && nx < W_WEB && ny >= 0 && ny < H_WEB) {
+                                        const np = ny * W_WEB + nx;
+                                        if (diffMask[np] === 1 && visited[np] === 0) {
+                                            visited[np] = 1;
+                                            queue[tail++] = np;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        const palm = lms[9], wrist = lms[0];
+                        const pX = palm.x * W_WEB, pY = palm.y * H_WEB;
+                        const wX = wrist.x * W_WEB, wY = wrist.y * H_WEB;
+                        const adx = wX - pX, ady = wY - pY;
+                        const aDist = Math.max(15, Math.hypot(adx, ady));
+                        const anx = adx / aDist, any = ady / aDist;
+                        const maxArmReach = aDist * 6.5;
+
+                        while (head < tail) {
+                            const curr = queue[head++];
+                            const cx = curr % W_WEB, cy = Math.floor(curr / W_WEB);
+                            const nbs = [curr - 1, curr + 1, curr - W_WEB, curr + W_WEB];
+                            for (let n = 0; n < 4; n++) {
+                                const np = nbs[n];
+                                if (np >= 0 && np < totalPix && visited[np] === 0 && diffMask[np] === 1) {
+                                    const nx = np % W_WEB, ny = Math.floor(np / W_WEB);
+                                    if ((nx - wX) * anx + (ny - wY) * any < maxArmReach) {
+                                        visited[np] = 1;
+                                        queue[tail++] = np;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    foregroundMask = visited;
+                }
+
+                // Shader Holográfico Verde
+                for (let p = 0; p < totalPix; p++) {
+                    const i = p * 4;
+                    if (foregroundMask[p] === 1) {
+                        data[i]     = Math.min(255, Math.round(data[i]     * 0.20));
+                        data[i + 1] = Math.min(255, Math.round(data[i + 1] * 1.70 + 75));
+                        data[i + 2] = Math.min(255, Math.round(data[i + 2] * 0.35));
+                        data[i + 3] = 255;
+                    } else {
+                        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0;
+                    }
+                }
+
+                offCtx.putImageData(currentImg, 0, 0);
+                webCtx.clearRect(0, 0, 1920, 1080);
+                webCtx.drawImage(offCanvas, 0, 0, 1920, 1080);
+
+                const renderedJpeg = webCanvas.toDataURL('image/jpeg', 0.65);
+                primaryChannel.postMessage({ type: 'stream', image: renderedJpeg });
+                legacyChannel.postMessage({ type: 'stream', image: renderedJpeg });
+
+            } catch (errCycle) {
+                console.error('Error ciclo web differencing:', errCycle);
+            } finally {
+                webFrameBusy = false;
+                if (webRunning && isWebMode) setTimeout(fetchNextWebFrame, 25);
+            }
+        };
+
+        webFrameLoader.onerror = () => {
+            webFrameBusy = false;
+            if (webRunning && isWebMode) setTimeout(fetchNextWebFrame, 100);
+        };
+
+        // Iniciar en modo CUDA por defecto
+        startCursorSSE();
+        log('Centro de Control Touchless Inicializado Correctamente.', 'success');
+    </script>
+</body>
+</html>
