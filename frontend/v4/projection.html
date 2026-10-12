@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proyección V4 - RVM (Robust Video Matting)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #000000;
+      color: #ffffff;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      cursor: none;
+    }
+
+    #bg-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      display: none;
+      filter: brightness(70%);
+      transition: filter 0.2s ease;
+    }
+
+    #stream-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      z-index: 2;
+      mix-blend-mode: screen;
+      pointer-events: none;
+      transform: scaleX(-1);
+    }
+
+    #badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.45);
+      background: rgba(0, 0, 0, 0.70);
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      pointer-events: none;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body>
+  <video id="bg-video" autoplay loop muted playsinline></video>
+  <canvas id="stream-canvas" width="1920" height="1080"></canvas>
+  <div id="badge">V4 Proyección (RVM Matting)</div>
+
+  <script>
+    const streamCanvas = document.getElementById("stream-canvas");
+    const ctx = streamCanvas.getContext("2d", { alpha: true });
+    const bgVideo = document.getElementById("bg-video");
+    const badge = document.getElementById("badge");
+
+    let currentVideoBlobUrl = null;
+
+    // Canal dedicado V4
+    const projectionChannel = new BroadcastChannel("hand_projection_v4_channel");
+
+    // Notificar disponibilidad
+    projectionChannel.postMessage({ type: "projection_ready" });
+
+    projectionChannel.onmessage = (e) => {
+      const data = e.data;
+      if (!data) return;
+
+      if (data.type === "stream_bitmap" && data.bitmap) {
+        ctx.clearRect(0, 0, streamCanvas.width, streamCanvas.height);
+        ctx.drawImage(data.bitmap, 0, 0, streamCanvas.width, streamCanvas.height);
+        data.bitmap.close();
+      } 
+      else if (data.type === "set_bg_video") {
+        if (currentVideoBlobUrl) {
+          URL.revokeObjectURL(currentVideoBlobUrl);
+          currentVideoBlobUrl = null;
+        }
+
+        if (data.blob) {
+          currentVideoBlobUrl = URL.createObjectURL(data.blob);
+          bgVideo.src = currentVideoBlobUrl;
+        } else if (data.url) {
+          bgVideo.src = data.url;
+        }
+
+        if (data.brightness !== undefined) {
+          bgVideo.style.filter = `brightness(${data.brightness}%)`;
+        }
+
+        bgVideo.style.display = "block";
+        bgVideo.play().catch(err => console.warn("Auto-play prevenido:", err));
+      } 
+      else if (data.type === "toggle_bg_video") {
+        if (bgVideo.paused) {
+          bgVideo.play().catch(err => console.warn("Error:", err));
+        } else {
+          bgVideo.pause();
+        }
+      } 
+      else if (data.type === "update_bg_video") {
+        if (data.brightness !== undefined) {
+          bgVideo.style.filter = `brightness(${data.brightness}%)`;
+        }
+      } 
+      else if (data.type === "clear_bg_video") {
+        bgVideo.pause();
+        bgVideo.removeAttribute("src");
+        bgVideo.load();
+        bgVideo.style.display = "none";
+        if (currentVideoBlobUrl) {
+          URL.revokeObjectURL(currentVideoBlobUrl);
+          currentVideoBlobUrl = null;
+        }
+      }
+    };
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "h") {
+        badge.style.display = badge.style.display === "none" ? "block" : "none";
+      }
+    });
+  </script>
+</body>
+</html>

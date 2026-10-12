@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controlador V4 - RVM (Robust Video Matting)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f0f6fc;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-rvm {
+      background: linear-gradient(135deg, #1f6feb, #8957e5);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 12px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 0 10px rgba(137, 87, 229, 0.4);
+    }
+
+    .status-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8b949e;
+      transition: all 0.3s ease;
+    }
+    .dot.online, .dot.active {
+      background: #3fb950;
+      box-shadow: 0 0 8px #3fb950;
+    }
+    .dot.pinch {
+      background: #e3b341;
+      box-shadow: 0 0 10px #e3b341;
+      transform: scale(1.3);
+    }
+    .dot.offline {
+      background: #f85149;
+    }
+    .dot.loading {
+      background: #db6d28;
+      box-shadow: 0 0 8px #db6d28;
+    }
+
+    #stage-container {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #010409;
+      overflow: hidden;
+    }
+
+    #display-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .controls-bar {
+      position: absolute;
+      top: 12px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 20;
+      background: rgba(13, 17, 23, 0.88);
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      backdrop-filter: blur(8px);
+    }
+
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #30363d;
+      border-color: #8b949e;
+    }
+
+    button.action {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: white;
+      font-weight: 600;
+    }
+    button.action:hover {
+      background: #388bfd;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .controls-divider {
+      width: 1px;
+      height: 24px;
+      background: #30363d;
+      margin: 0 4px;
+    }
+
+    .select-control {
+      background: #161b22;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .slider-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #8b949e;
+      background: #161b22;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid #21262d;
+    }
+
+    .slider-control input[type="range"] {
+      width: 65px;
+      cursor: pointer;
+      accent-color: #58a6ff;
+    }
+
+    .badge-tag {
+      font-size: 11px;
+      font-family: monospace;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      max-width: 130px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge-tag.active {
+      color: #3fb950;
+      border-color: rgba(63, 185, 80, 0.4);
+      background: rgba(63, 185, 80, 0.1);
+    }
+
+    #debug-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 380px;
+      max-height: 200px;
+      background: rgba(13, 17, 23, 0.90);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      color: #8b949e;
+      overflow-y: auto;
+      z-index: 20;
+      backdrop-filter: blur(8px);
+    }
+
+    #debug-panel .log-title {
+      font-weight: bold;
+      color: #f0f6fc;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .log-entry { margin-bottom: 3px; line-height: 1.4; word-break: break-all; }
+    .log-entry.info { color: #58a6ff; }
+    .log-entry.success { color: #3fb950; }
+    .log-entry.warn { color: #d29922; }
+    .log-entry.error { color: #f85149; font-weight: bold; }
+
+    #toast {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: #1f6feb;
+      color: white;
+      border-radius: 6px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: all 0.2s ease;
+      z-index: 30;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+
+  <!-- ONNX Runtime Web optimizado con 4 hilos SIMD multi-core -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js"></script>
+  <!-- MediaPipe para Esqueleto y Gestos -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+</head>
+<body>
+
+  <header>
+    <div class="title-group">
+      <h2>Controlador V4 (RVM Matting)</h2>
+      <span class="badge-rvm">Deep Matting 60 FPS</span>
+    </div>
+
+    <div class="status-group">
+      <div class="indicator">
+        <span id="rvm-dot" class="dot loading"></span>
+        <span id="rvm-label">RVM: Cargando modelo...</span>
+      </div>
+      <div class="indicator">
+        <span id="proj-dot" class="dot offline"></span>
+        <span id="proj-label">Proyección V4: Esperando...</span>
+      </div>
+      <div class="indicator">
+        <span id="hand-dot" class="dot offline"></span>
+        <span id="hand-label">Mano: Buscando...</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="stage-container">
+    <div class="controls-bar">
+      <button id="open-proj-btn" class="action">🖥️ Abrir Proyección V4</button>
+      <button id="reload-btn">🔄 Recargar</button>
+      <button id="filter-mode-btn" title="Alternar entre recortar solo el brazo o mostrar silueta RVM completa">🎯 Modo: Solo Brazos</button>
+
+      <div class="controls-divider"></div>
+
+      <!-- Efecto de Shader -->
+      <select id="effect-select" class="select-control" title="Seleccionar estilo visual del shader">
+        <option value="0">🦾 Cyber-Arm Realista (Piel Real + Circuitos HUD + Rim Neón)</option>
+        <option value="1">✨ Matrix RVM (Verde + Circuitos Vivos)</option>
+        <option value="2">⚡ Cyberpunk Cyan RVM (Cian Eléctrico)</option>
+        <option value="3">🌐 Plasma Holográfico Pulsante</option>
+        <option value="4">🟢 Silueta Sólida Matrix</option>
+      </select>
+
+      <!-- Grosor del Brazo -->
+      <div class="slider-control" title="Ajustar grosor del filtro de brazo">
+        <span>💪</span>
+        <input type="range" id="arm-radius-slider" min="4" max="20" value="9">
+        <span id="radius-val">9</span>
+      </div>
+
+      <div class="controls-divider"></div>
+
+      <!-- Video de Fondo -->
+      <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
+      <button id="load-video-btn" title="Cargar video de fondo para la proyección">🎬 Video Fondo</button>
+      <button id="toggle-video-btn" title="Pausar / Reanudar video" disabled>⏯️</button>
+      <button id="clear-video-btn" title="Quitar video de fondo" disabled>🗑️</button>
+      <div class="slider-control" title="Brillo del video de fondo">
+        <span>☀️</span>
+        <input type="range" id="video-brightness" min="10" max="100" value="70">
+        <span id="brightness-val">70%</span>
+      </div>
+      <span id="video-status-badge" class="badge-tag" title="Estado del video">Sin video</span>
+    </div>
+
+    <!-- Video de la cámara -->
+    <video id="webcam-video" autoplay playsinline muted style="display: none;"></video>
+
+    <!-- Canvas WebGL 2.0 (Compositor GPU 1280x720) -->
+    <canvas id="webgl-canvas" width="1280" height="720" style="display: none;"></canvas>
+
+    <!-- Canvas de Visualización para el Operador (1920x1080) -->
+    <canvas id="display-canvas" width="1920" height="1080"></canvas>
+
+    <div id="debug-panel">
+      <div class="log-title">
+        <span>Diagnóstico V4 (RVM Engine)</span>
+        <span id="fps-label">0 FPS</span>
+      </div>
+      <div id="debug-logs"></div>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <script type="module">
+    import { RVMEngine } from "./js/rvm_engine.js";
+    import { WebGLCompositor } from "./js/webgl_compositor.js";
+
+    const WS_URL = "ws://localhost:8080/ws";
+    let ws = null;
+    let wsConnected = false;
+
+    const video = document.getElementById("webcam-video");
+    const glCanvas = document.getElementById("webgl-canvas");
+    const displayCanvas = document.getElementById("display-canvas");
+    const ctx = displayCanvas.getContext("2d");
+
+    const rvmDot = document.getElementById("rvm-dot");
+    const rvmLabel = document.getElementById("rvm-label");
+    const projDot = document.getElementById("proj-dot");
+    const projLabel = document.getElementById("proj-label");
+    const handDot = document.getElementById("hand-dot");
+    const handLabel = document.getElementById("hand-label");
+
+    const debugLogs = document.getElementById("debug-logs");
+    const fpsLabel = document.getElementById("fps-label");
+    const toast = document.getElementById("toast");
+
+    const openProjBtn = document.getElementById("open-proj-btn");
+    const reloadBtn = document.getElementById("reload-btn");
+    const effectSelect = document.getElementById("effect-select");
+    const armRadiusSlider = document.getElementById("arm-radius-slider");
+    const radiusVal = document.getElementById("radius-val");
+
+    const bgVideoInput = document.getElementById("bg-video-input");
+    const loadVideoBtn = document.getElementById("load-video-btn");
+    const toggleVideoBtn = document.getElementById("toggle-video-btn");
+    const clearVideoBtn = document.getElementById("clear-video-btn");
+    const videoBrightness = document.getElementById("video-brightness");
+    const brightnessVal = document.getElementById("brightness-val");
+    const videoStatusBadge = document.getElementById("video-status-badge");
+
+    // Canal dedicado V4
+    const projectionChannel = new BroadcastChannel("hand_projection_v4_channel");
+
+    let currentBgVideoFile = null;
+    let currentBgBrightness = 70;
+    let isBgVideoPlaying = true;
+    let currentEffectMode = 0;
+    let currentArmRadius = 0.09;
+
+    let objects = [];
+    let currentHoverObj = null;
+    let isPinched = false;
+    let lastClickTime = 0;
+    const CLICK_COOLDOWN_MS = 650;
+    const ripples = [];
+
+    let rvmEngine = null;
+    let compositor = null;
+    let poseDetector = null;
+    let handsDetector = null;
+
+    let latestArmData = { leftArm: null, rightArm: null, leftValid: false, rightValid: false };
+    let latestGestures = [];
+
+    function addLog(msg, type = "info") {
+      const line = document.createElement("div");
+      line.className = `log-entry ${type}`;
+      const time = new Date().toLocaleTimeString().split(" ")[0];
+      line.textContent = `[${time}] ${msg}`;
+      debugLogs.appendChild(line);
+      debugLogs.scrollTop = debugLogs.scrollHeight;
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    // Inicializar Compositor y Motor RVM
+    try {
+      compositor = new WebGLCompositor(glCanvas);
+      addLog("✓ WebGL Compositor 2.0 iniciado", "success");
+    } catch (e) {
+      addLog(`Error WebGL: ${e.message}`, "error");
+    }
+
+    rvmEngine = new RVMEngine({ width: 512, height: 288, downsampleRatio: 0.25 });
+
+    // Sincronización Proyector V4
+    projectionChannel.onmessage = (e) => {
+      if (e.data && e.data.type === "projection_ready") {
+        projDot.className = "dot online";
+        projLabel.textContent = "Proyección V4: Conectada";
+        addLog("✓ Ventana de proyección V4 conectada", "success");
+        if (currentBgVideoFile) {
+          projectionChannel.postMessage({
+            type: "set_bg_video",
+            blob: currentBgVideoFile,
+            name: currentBgVideoFile.name,
+            brightness: currentBgBrightness
+          });
+        }
+      }
+    };
+
+    openProjBtn.onclick = () => {
+      window.open("projection.html", "projection_window_v4", "width=1280,height=720");
+      showToast("Ventana de proyección V4 abierta.");
+    };
+
+    reloadBtn.onclick = () => {
+      loadObjects();
+      showToast("Objetos recargados.");
+    };
+
+    effectSelect.onchange = (e) => {
+      currentEffectMode = parseInt(e.target.value, 10);
+      addLog(`Efecto RVM: ${effectSelect.options[effectSelect.selectedIndex].text}`);
+    };
+
+    armRadiusSlider.oninput = (e) => {
+      const val = parseInt(e.target.value, 10);
+      currentArmRadius = val / 100.0;
+      radiusVal.textContent = val;
+    };
+
+    const filterModeBtn = document.getElementById("filter-mode-btn");
+    let filterArmsMode = true;
+
+    filterModeBtn.onclick = () => {
+      filterArmsMode = !filterArmsMode;
+      if (filterArmsMode) {
+        filterModeBtn.textContent = "🎯 Modo: Solo Brazos";
+        filterModeBtn.classList.remove("action");
+        showToast("Modo: Solo Brazos (Aislamiento anatómico)");
+        addLog("Modo cambiado a: Solo Brazos (Aislamiento anatómico activo)");
+      } else {
+        filterModeBtn.textContent = "👤 Modo: Silueta Completa";
+        filterModeBtn.classList.add("action");
+        showToast("Modo: Silueta Completa RVM");
+        addLog("Modo cambiado a: Silueta Completa (RVM Matte completo)");
+      }
+    };
+
+    // Video Fondo
+    loadVideoBtn.onclick = () => bgVideoInput.click();
+
+    bgVideoInput.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      currentBgVideoFile = file;
+      isBgVideoPlaying = true;
+      videoStatusBadge.textContent = file.name;
+      videoStatusBadge.classList.add("active");
+      toggleVideoBtn.disabled = false;
+      clearVideoBtn.disabled = false;
+
+      projectionChannel.postMessage({
+        type: "set_bg_video",
+        blob: file,
+        name: file.name,
+        brightness: currentBgBrightness
+      });
+      addLog(`🎬 Video de fondo cargado: ${file.name}`, "success");
+      showToast(`Video de fondo: ${file.name}`);
+    };
+
+    toggleVideoBtn.onclick = () => {
+      if (!currentBgVideoFile) return;
+      isBgVideoPlaying = !isBgVideoPlaying;
+      projectionChannel.postMessage({ type: "toggle_bg_video" });
+    };
+
+    clearVideoBtn.onclick = () => {
+      currentBgVideoFile = null;
+      bgVideoInput.value = "";
+      toggleVideoBtn.disabled = true;
+      clearVideoBtn.disabled = true;
+      videoStatusBadge.textContent = "Sin video";
+      videoStatusBadge.classList.remove("active");
+      projectionChannel.postMessage({ type: "clear_bg_video" });
+      showToast("Video quitado.");
+    };
+
+    videoBrightness.oninput = (e) => {
+      currentBgBrightness = parseInt(e.target.value, 10);
+      brightnessVal.textContent = `${currentBgBrightness}%`;
+      projectionChannel.postMessage({
+        type: "update_bg_video",
+        brightness: currentBgBrightness
+      });
+    };
+
+    async function loadObjects() {
+      try {
+        let res = await fetch("/api/objects", { cache: "no-store" }).catch(() => null);
+        if (!res || !res.ok) res = await fetch("../objects.json", { cache: "no-store" });
+        objects = await res.json();
+        addLog(`✓ ${objects.length} objetos interactivos vinculados`, "success");
+      } catch (err) {
+        addLog(`Fallo al cargar objetos: ${err.message}`, "error");
+      }
+    }
+
+    let lastPoseTime = 0;
+    let lastHandsTime = 0;
+    let latestHandLandmarks = [];
+
+    function resolveMediaPipeFile(file) {
+      if (file.startsWith("pose")) {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`;
+      }
+      if (file.startsWith("hand")) {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
+      }
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
+    }
+
+    async function initPoseAndHands() {
+      if (window.Pose) {
+        poseDetector = new window.Pose({ locateFile: resolveMediaPipeFile });
+        poseDetector.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        poseDetector.onResults(onPoseResults);
+        try {
+          await poseDetector.initialize();
+          addLog("✓ MediaPipe Pose inicializado", "success");
+        } catch (e) {
+          console.warn("Pose initialize:", e);
+        }
+      } else {
+        addLog("Error: Librería MediaPipe Pose no disponible", "error");
+      }
+
+      if (window.Hands) {
+        handsDetector = new window.Hands({ locateFile: resolveMediaPipeFile });
+        handsDetector.setOptions({
+          modelComplexity: 1,
+          maxNumHands: 2,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        handsDetector.onResults(onHandsResults);
+        try {
+          await handsDetector.initialize();
+          addLog("✓ MediaPipe Hands inicializado", "success");
+        } catch (e) {
+          console.warn("Hands initialize:", e);
+        }
+      } else {
+        addLog("Error: Librería MediaPipe Hands no disponible", "error");
+      }
+    }
+
+    function onPoseResults(res) {
+      if (!res.poseLandmarks) return;
+      lastPoseTime = performance.now();
+      const lm = res.poseLandmarks;
+      const minV = 0.25;
+
+      const ls = lm[11], le = lm[13], lw = lm[15];
+      if (ls && le && lw && (ls.visibility > minV || ls.visibility === undefined)) {
+        const dx = lw.x - le.x, dy = lw.y - le.y;
+        let tip = { x: lw.x + dx * 0.65, y: lw.y + dy * 0.65 };
+        if (latestHandLandmarks.length > 0) {
+          for (const h of latestHandLandmarks) {
+            if (Math.hypot(h[0].x - lw.x, h[0].y - lw.y) < 0.22) {
+              tip = { x: h[12].x, y: h[12].y };
+              break;
+            }
+          }
+        }
+        // Desplazar el inicio hacia el codo para no colorear clavícula, cuello ni pecho
+        const upperArmStart = { x: ls.x * 0.55 + le.x * 0.45, y: ls.y * 0.55 + le.y * 0.45 };
+        latestArmData.leftArm = [
+          upperArmStart,
+          { x: le.x, y: le.y },
+          { x: lw.x, y: lw.y },
+          tip
+        ];
+        latestArmData.leftValid = true;
+      } else {
+        if (performance.now() - lastHandsTime > 450) {
+          latestArmData.leftValid = false;
+        }
+      }
+
+      const rs = lm[12], re = lm[14], rw = lm[16];
+      if (rs && re && rw && (rs.visibility > minV || rs.visibility === undefined)) {
+        const dx = rw.x - re.x, dy = rw.y - re.y;
+        let tip = { x: rw.x + dx * 0.65, y: rw.y + dy * 0.65 };
+        if (latestHandLandmarks.length > 0) {
+          for (const h of latestHandLandmarks) {
+            if (Math.hypot(h[0].x - rw.x, h[0].y - rw.y) < 0.22) {
+              tip = { x: h[12].x, y: h[12].y };
+              break;
+            }
+          }
+        }
+        const upperArmStart = { x: rs.x * 0.55 + re.x * 0.45, y: rs.y * 0.55 + re.y * 0.45 };
+        latestArmData.rightArm = [
+          upperArmStart,
+          { x: re.x, y: re.y },
+          { x: rw.x, y: rw.y },
+          tip
+        ];
+        latestArmData.rightValid = true;
+      } else {
+        if (performance.now() - lastHandsTime > 450) {
+          latestArmData.rightValid = false;
+        }
+      }
+    }
+
+    function onHandsResults(res) {
+      const gestures = [];
+      const hands = res.multiHandLandmarks || [];
+      latestHandLandmarks = hands;
+
+      if (hands.length > 0) {
+        lastHandsTime = performance.now();
+
+        for (let i = 0; i < hands.length; i++) {
+          const hand = hands[i];
+          const tip8 = hand[8];    // Índice
+          const tip4 = hand[4];    // Pulgar
+          const tip12 = hand[12];  // Medio
+          const wrist = hand[0];   // Muñeca
+          const knuckle = hand[9]; // Nudillo medio
+
+          const dist = Math.hypot(tip8.x - tip4.x, tip8.y - tip4.y);
+          gestures.push({ indexTip: tip8, thumbTip: tip4, distance: dist, isPinched: dist < 0.075 });
+
+          // Dirección anatómica de la mano
+          const dirX = knuckle.x - wrist.x;
+          const dirY = knuckle.y - wrist.y;
+
+          // Reconstruir estrictamente antebrazo y mano (evitar invadir pecho, cuello o cara)
+          const synthesizedArm = [
+            { x: wrist.x - dirX * 1.45, y: wrist.y - dirY * 1.45 }, // Codo / Antebrazo
+            { x: wrist.x - dirX * 0.75, y: wrist.y - dirY * 0.75 }, // Antebrazo inferior
+            { x: wrist.x, y: wrist.y },                             // Muñeca
+            { x: tip12.x, y: tip12.y }                              // Punta dedos
+          ];
+
+          if (wrist.x < 0.5) {
+            if (!latestArmData.leftValid || (performance.now() - lastPoseTime > 400)) {
+              latestArmData.leftArm = synthesizedArm;
+              latestArmData.leftValid = true;
+            }
+          } else {
+            if (!latestArmData.rightValid || (performance.now() - lastPoseTime > 400)) {
+              latestArmData.rightArm = synthesizedArm;
+              latestArmData.rightValid = true;
+            }
+          }
+        }
+      }
+      latestGestures = gestures;
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }
+        });
+        video.srcObject = stream;
+        await video.play();
+        addLog(`✓ Cámara 720p conectada`, "success");
+        startV4Pipeline();
+      } catch (err) {
+        addLog(`Error en cámara: ${err.message}`, "error");
+      }
+    }
+
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+    let startTime = performance.now();
+    let isStreamBusy = false;
+    let isRvmBusy = false;
+    let isVisionBusy = false;
+    let visionFrameIndex = 0;
+
+    function startV4Pipeline() {
+      async function tick() {
+        if (video.readyState >= 2) {
+          // 1. Inferencia Visión (Hands a 60 FPS + Pose diezmado a ~20 FPS para máximo rendimiento)
+          if (!isVisionBusy) {
+            isVisionBusy = true;
+            visionFrameIndex++;
+            (async () => {
+              try {
+                if (handsDetector) {
+                  await handsDetector.send({ image: video });
+                }
+                // Pose solo necesita actualizar anclajes 1 de cada 3 cuadros
+                if (poseDetector && (visionFrameIndex % 3 === 0)) {
+                  await poseDetector.send({ image: video });
+                }
+              } catch (err) {
+                // Silencioso ante skips normales de fotogramas
+              } finally {
+                isVisionBusy = false;
+              }
+            })();
+          }
+
+          // 2. Inferencia RVM (Robust Video Matting) en WebGPU/WASM
+          if (rvmEngine && rvmEngine.isReady && !isRvmBusy) {
+            isRvmBusy = true;
+            rvmEngine.processFrame(video).then(async (rvmResult) => {
+              if (rvmResult && compositor) {
+                // Actualizar texturas en GPU
+                compositor.updateCameraTexture(video);
+                compositor.updateRvmMask(rvmResult.alphaData, rvmResult.width, rvmResult.height);
+
+                // Renderizar Shaders
+                const timeSec = (performance.now() - startTime) / 1000.0;
+                compositor.render({
+                  leftArm: latestArmData.leftArm,
+                  rightArm: latestArmData.rightArm,
+                  armRadius: currentArmRadius,
+                  time: timeSec,
+                  effectMode: currentEffectMode,
+                  mirror: false,
+                  filterArms: filterArmsMode
+                });
+
+                // Enviar fotograma HD al proyector
+                if (!isStreamBusy) {
+                  isStreamBusy = true;
+                  createImageBitmap(glCanvas).then((bitmap) => {
+                    projectionChannel.postMessage({ type: "stream_bitmap", bitmap: bitmap });
+                    isStreamBusy = false;
+                  }).catch(() => { isStreamBusy = false; });
+                }
+              }
+            }).catch((err) => {
+              console.warn("RVM error:", err);
+            }).finally(() => {
+              isRvmBusy = false;
+            });
+          }
+
+          // 4. Renderizar Operador
+          renderOperatorDisplay();
+
+          frameCount++;
+          const now = Date.now();
+          if (now - lastFpsTime >= 1000) {
+            fpsLabel.textContent = `${frameCount} FPS`;
+            frameCount = 0;
+            lastFpsTime = now;
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function renderOperatorDisplay() {
+      ctx.save();
+      ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+
+      // Fondo de cámara atenuado espejado
+      ctx.save();
+      ctx.translate(displayCanvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.globalAlpha = 0.28;
+      ctx.drawImage(video, 0, 0, displayCanvas.width, displayCanvas.height);
+      ctx.restore();
+
+      // Capa de Brazo RVM WebGL
+      if (compositor) {
+        ctx.save();
+        ctx.translate(displayCanvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(glCanvas, 0, 0, displayCanvas.width, displayCanvas.height);
+        ctx.restore();
+      }
+
+      // Objetos Interactivos
+      drawInteractiveObjects();
+
+      // Puntero y Gestos
+      handleHandGestures();
+
+      drawRipples();
+      ctx.restore();
+    }
+
+    function drawInteractiveObjects() {
+      for (const obj of objects) {
+        if (!obj.polygon || obj.polygon.length < 3) continue;
+        const isHover = currentHoverObj && currentHoverObj.id === obj.id;
+
+        ctx.beginPath();
+        ctx.moveTo(obj.polygon[0][0], obj.polygon[0][1]);
+        for (let i = 1; i < obj.polygon.length; i++) {
+          ctx.lineTo(obj.polygon[i][0], obj.polygon[i][1]);
+        }
+        ctx.closePath();
+
+        if (isHover) {
+          ctx.fillStyle = "rgba(255, 170, 50, 0.4)";
+          ctx.strokeStyle = "#ffaa32";
+          ctx.lineWidth = 4;
+        } else {
+          ctx.fillStyle = "rgba(40, 70, 120, 0.25)";
+          ctx.strokeStyle = (obj.animation && obj.animation.color) ? obj.animation.color : "rgba(88, 166, 255, 0.7)";
+          ctx.lineWidth = 2.5;
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.save();
+        ctx.font = "bold 16px monospace";
+        ctx.fillStyle = isHover ? "#ffaa32" : "#58a6ff";
+        const name = obj.label || obj.device_id || obj.id;
+        ctx.fillText(name, obj.polygon[0][0], Math.max(25, obj.polygon[0][1] - 8));
+        ctx.restore();
+      }
+    }
+
+    function handleHandGestures() {
+      if (latestGestures && latestGestures.length > 0) {
+        const pointer = latestGestures[0];
+        handDot.className = "dot active";
+        handLabel.textContent = latestGestures.length > 1 ? "2 Manos Detectadas" : "Mano: Detectada";
+
+        const fingerX = (1.0 - pointer.indexTip.x) * displayCanvas.width;
+        const fingerY = pointer.indexTip.y * displayCanvas.height;
+
+        let hovered = null;
+        for (const obj of objects) {
+          if (obj.polygon && isPointInPolygon([fingerX, fingerY], obj.polygon)) {
+            hovered = obj;
+            break;
+          }
+        }
+
+        if (hovered !== currentHoverObj) {
+          currentHoverObj = hovered;
+        }
+
+        if (pointer.isPinched && !isPinched) {
+          isPinched = true;
+          const now = Date.now();
+          if (now - lastClickTime > CLICK_COOLDOWN_MS) {
+            lastClickTime = now;
+            ripples.push({ x: fingerX, y: fingerY, r: 14, alpha: 1.0 });
+            if (currentHoverObj) {
+              addLog(`⚡ Clic en [${currentHoverObj.label || currentHoverObj.id}]`, "warn");
+              showToast(`Acción activada: ${currentHoverObj.label || currentHoverObj.id}`);
+            }
+          }
+        } else if (!pointer.isPinched) {
+          isPinched = false;
+        }
+
+        drawReticle(fingerX, fingerY, pointer.isPinched);
+      } else {
+        handDot.className = "dot offline";
+        handLabel.textContent = "Mano: Buscando...";
+        currentHoverObj = null;
+      }
+    }
+
+    function isPointInPolygon(point, vs) {
+      const x = point[0], y = point[1];
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i][0], yi = vs[i][1];
+        const xj = vs[j][0], yj = vs[j][1];
+        const intersect = ((yi > y) !== (yj > y)) &&
+                          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function drawReticle(x, y, pinched) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, pinched ? 16 : 10, 0, Math.PI * 2);
+      ctx.fillStyle = pinched ? "#ffea70" : "#58a6ff";
+      ctx.shadowColor = pinched ? "#ffea70" : "#58a6ff";
+      ctx.shadowBlur = 15;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, pinched ? 28 : 20, 0, Math.PI * 2);
+      ctx.strokeStyle = pinched ? "#ffea70" : "rgba(88, 166, 255, 0.8)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawRipples() {
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rip = ripples[i];
+        rip.r += 6;
+        rip.alpha -= 0.04;
+        if (rip.alpha <= 0) {
+          ripples.splice(i, 1);
+          continue;
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(rip.x, rip.y, rip.r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 234, 112, ${rip.alpha})`;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Arranque
+    window.addEventListener("DOMContentLoaded", async () => {
+      loadObjects();
+      await initPoseAndHands();
+
+      addLog("Cargando modelo neuronal RVM (14.9 MB)...");
+      try {
+        await rvmEngine.init("models/rvm_mobilenetv3_fp32.onnx");
+        rvmDot.className = "dot online";
+        rvmLabel.textContent = "RVM: Activo (WASM Multi-Hilo 60 FPS)";
+        addLog("✓ Red Neuronal RVM lista para inferencia en tiempo real", "success");
+      } catch (err) {
+        rvmDot.className = "dot offline";
+        rvmLabel.textContent = "RVM: Error al cargar";
+        addLog(`Error cargando RVM: ${err.message}`, "error");
+      }
+
+      startCamera();
+    });
+  </script>
+</body>
+</html>

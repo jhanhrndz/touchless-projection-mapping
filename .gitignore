@@ -36,3 +36,16 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Binary AI models and weights
+*.pt
+*.onnx
+*.engine
+*.task
+*.bin
+*.pth
+torch_hub_cache/
+
+# Video clips for benchmarks and tests (generated locally)
+tests/clips/*.mp4
+!tests/clips/.gitkeep

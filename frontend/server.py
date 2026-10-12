@@ -53,6 +53,9 @@ class HandTrackingHandler(SimpleHTTPRequestHandler):
         # Permitir CORS para desarrollo
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        # Habilitar crossOriginIsolated para SharedArrayBuffer y multi-hilo WASM
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "credentialless")
         super().end_headers()
 
     def do_OPTIONS(self) -> None:
