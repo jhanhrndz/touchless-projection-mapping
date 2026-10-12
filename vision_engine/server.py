@@ -29,7 +29,7 @@ class EngineState:
     """Estado global compartido entre el bucle de visión y el servidor HTTP."""
 
     def __init__(self) -> None:
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.latest_jpeg: Optional[bytes] = None
         self.latest_raw_jpeg: Optional[bytes] = None
         self.latest_raw_bgr = None
@@ -70,6 +70,11 @@ class EngineState:
         elif "fondo" in b or "resta" in b:
             return "background_subtraction"
         return "fastsam"
+
+    @active_model.setter
+    def active_model(self, val: str) -> None:
+        with self.lock:
+            self.requested_mode = str(val)
 
     @property
     def guided_filter(self) -> bool:
@@ -133,10 +138,6 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
 
         # 2. API de telemetría de GPU y modelos
         if self.path == "/api/status":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-
             try:
                 import torch
                 has_cuda = torch.cuda.is_available()
@@ -158,17 +159,24 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                     "arm_only": STATE.arm_only,
                     "is_calibrated": STATE.bg_frame is not None,
                 }
-            self.wfile.write(json.dumps(status_data).encode("utf-8"))
+            payload = json.dumps(status_data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         # 3. API de posición de cursor
         if self.path == "/api/cursor":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
             with STATE.lock:
                 cur = dict(STATE.cursor)
-            self.wfile.write(json.dumps(cur).encode("utf-8"))
+            payload = json.dumps(cur).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         # 4. Stream SSE para eventos de cursor
@@ -240,12 +248,12 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
             length = 0
 
         if length > self.MAX_POST_BODY_BYTES:
-            if length > 0:
-                _ = self.rfile.read(min(length, 1024 * 1024))
             self.send_response(413)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(b'{"error": "Payload Too Large (max 64 KB)"}')
+            self.close_connection = True
             return
 
         body = self.rfile.read(length) if length > 0 else b""
@@ -258,15 +266,21 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                 if model_name:
                     with STATE.lock:
                         STATE.requested_mode = model_name
+                        STATE.active_model = model_name
+                    resp_b = json.dumps({"status": "ok", "success": True, "requested": model_name}).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(resp_b)))
                     self.end_headers()
-                    self.wfile.write(json.dumps({"status": "ok", "success": True, "requested": model_name}).encode("utf-8"))
+                    self.wfile.write(resp_b)
                     return
             except Exception as e:
+                err_b = json.dumps({"error": str(e)}).encode("utf-8")
                 self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_b)))
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+                self.wfile.write(err_b)
                 return
 
         # 2. Calibrar fondo
@@ -274,10 +288,12 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
             with STATE.lock:
                 if STATE.latest_raw_bgr is not None:
                     STATE.bg_frame = STATE.latest_raw_bgr.copy()
+            resp_b = b'{"status": "calibrated", "success": true}'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(resp_b)))
             self.end_headers()
-            self.wfile.write(b'{"status": "calibrated", "success": true}')
+            self.wfile.write(resp_b)
             return
 
         # 3. Ajustes dinámicos
@@ -295,15 +311,20 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                         STATE.reset_requested = True
                     gf_val = STATE.guided_filter_on
                     arm_val = STATE.arm_only
+                resp_b = json.dumps({"status": "updated", "success": True, "guided_filter": gf_val, "arm_only": arm_val}).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(resp_b)))
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "updated", "success": True, "guided_filter": gf_val, "arm_only": arm_val}).encode("utf-8"))
+                self.wfile.write(resp_b)
                 return
             except Exception as e:
+                err_b = json.dumps({"error": str(e)}).encode("utf-8")
                 self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_b)))
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+                self.wfile.write(err_b)
                 return
 
         self.send_response(404)

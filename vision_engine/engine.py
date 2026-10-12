@@ -74,6 +74,7 @@ class VideoFileSource:
         self.cap = cv2.VideoCapture(self.path)
         if not self.cap.isOpened():
             raise FileNotFoundError(f"No se pudo abrir el archivo de video: {path}")
+        self._is_opened: bool = True
         self.w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = float(self.cap.get(cv2.CAP_PROP_FPS)) or 30.0
@@ -86,15 +87,16 @@ class VideoFileSource:
         return ret, frame
 
     def is_opened(self) -> bool:
-        return self.cap.isOpened()
+        return self._is_opened and self.cap.isOpened()
 
     def isOpened(self) -> bool:
-        return self.cap.isOpened()
+        return self._is_opened and self.cap.isOpened()
 
     def get_dimensions(self) -> Tuple[int, int]:
         return self.w, self.h
 
     def release(self) -> None:
+        self._is_opened = False
         self.cap.release()
 
     def get(self, prop: int) -> float:

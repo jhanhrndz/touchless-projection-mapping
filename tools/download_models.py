@@ -14,6 +14,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT_DIR / "vision_engine" / "models"
 TORCH_HUB_CHECKPOINTS = ROOT_DIR / "torch_hub_cache" / "checkpoints"
@@ -76,7 +79,7 @@ def download_file(url: str, dest_path: Path, expected_bytes: int | None = None) 
         return True
     except Exception as e:
         sys.stdout.write("\n")
-        print(f"❌ Error al descargar {dest_path.name}: {e}")
+        print(f"[ERROR] Error al descargar {dest_path.name}: {e}")
         if tmp_path.exists():
             tmp_path.unlink()
         return False
@@ -84,16 +87,16 @@ def download_file(url: str, dest_path: Path, expected_bytes: int | None = None) 
 
 def main() -> None:
     print("=" * 70)
-    print("  📦 VERIFICACIÓN Y DESCARGA DE MODELOS NEURONALES")
+    print("  VERIFICACION Y DESCARGA DE MODELOS NEURONALES")
     print("=" * 70)
 
     for item in MODEL_DOWNLOADS:
         target = item["target_dir"] / item["name"]
         if target.exists() and target.stat().st_size > 0:
             size_mb = target.stat().st_size / 1024 / 1024
-            print(f"✓ {item['name']:<25} presente ({size_mb:6.1f} MB)")
+            print(f"  * {item['name']:<25} presente ({size_mb:6.1f} MB)")
         else:
-            print(f"⚠️  {item['name']:<25} no encontrado. Iniciando descarga...")
+            print(f"  [AVISO] {item['name']:<25} no encontrado. Iniciando descarga...")
             download_file(item["url"], target, item.get("expected_bytes"))
 
     print("\n[LISTO] Todos los modelos han sido verificados.")

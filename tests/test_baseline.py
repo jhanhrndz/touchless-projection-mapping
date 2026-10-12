@@ -11,12 +11,14 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import HTTPServer
+from http.server import HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Importar cuda_engine desde vision_engine
 from vision_engine import cuda_engine
@@ -73,7 +75,7 @@ class DummyServerRunner:
     def __init__(self, port: int = 5991) -> None:
         self.port = port
         self.state = cuda_engine.state
-        self.server = HTTPServer(("127.0.0.1", self.port), cuda_engine.EngineHTTPHandler)
+        self.server = ThreadingHTTPServer(("127.0.0.1", self.port), cuda_engine.EngineHTTPHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def start(self) -> None:
