@@ -46,7 +46,8 @@ class RvmProcessor:
         self.rec: List[Optional[torch.Tensor]] = [None] * 4
 
         # Cargar repositorios y pesos desde caché local del proyecto o del sistema
-        proj_cache = Path(__file__).resolve().parent.parent.parent.parent / "torch_hub_cache"
+        from vision_engine.config import TORCH_HUB_DIR
+        proj_cache = TORCH_HUB_DIR
         if (proj_cache / "PeterL1n_RobustVideoMatting_master").exists():
             cache_dir = proj_cache / "PeterL1n_RobustVideoMatting_master"
             torch.hub.set_dir(str(proj_cache))
