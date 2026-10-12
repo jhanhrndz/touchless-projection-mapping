@@ -187,40 +187,105 @@
             pointer-events: none;
         }
 
-        /* ── BARRA SECUNDARIA DE VIDEO DE FONDO ── */
-        .video-toolbar {
-            background: rgba(13, 17, 26, 0.88);
-            border-bottom: 1px solid #1a2333;
-            padding: 6px 18px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 12px;
-            z-index: 40;
+        /* ── MENÚ DESPLEGABLE DE AJUSTES Y VIDEO DE FONDO ── */
+        .dropdown-wrapper {
+            position: relative;
+            display: inline-block;
         }
 
-        .video-label {
-            color: var(--accent-cyan);
+        button.settings-btn {
+            background: #141f33;
+            border-color: #2b3e63;
+            color: #d1dcfa;
             font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+        }
+        button.settings-btn:hover, button.settings-btn.active {
+            background: #1d2c47;
+            border-color: var(--accent-cyan);
+            color: #fff;
+            box-shadow: 0 0 12px rgba(0, 242, 254, 0.35);
         }
 
-        .slider-control {
+        .settings-popover {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 370px;
+            background: rgba(14, 20, 32, 0.97);
+            border: 1px solid #293a5a;
+            border-radius: 10px;
+            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.88), 0 0 1px rgba(0, 242, 254, 0.3);
+            backdrop-filter: blur(16px);
+            padding: 16px;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            gap: 14px;
+            animation: popoverFadeIn 0.15s ease-out;
+        }
+
+        .settings-popover.open {
+            display: flex;
+        }
+
+        @keyframes popoverFadeIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .popover-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+        }
+        .popover-section:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--accent-cyan);
             display: flex;
             align-items: center;
-            gap: 6px;
-            background: #141b28;
-            padding: 4px 8px;
+            justify-content: space-between;
+        }
+
+        .section-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid #1a253a;
             border-radius: 6px;
-            border: 1px solid #1f2a3f;
+            padding: 6px 10px;
+            font-size: 11px;
             color: var(--text-muted);
         }
-        .slider-control input[type="range"] {
-            width: 80px;
+        .slider-row input[type="range"] {
+            flex: 1;
+            margin: 0 10px;
             cursor: pointer;
             accent-color: var(--accent-cyan);
+        }
+        .slider-val {
+            font-family: monospace;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            min-width: 44px;
+            text-align: right;
         }
 
         .badge-tag {
@@ -231,7 +296,7 @@
             background: #141b28;
             color: var(--text-muted);
             border: 1px solid #1f2a3f;
-            max-width: 180px;
+            max-width: 100%;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -240,6 +305,16 @@
             color: var(--accent-green);
             border-color: rgba(0, 255, 136, 0.4);
             background: rgba(0, 255, 136, 0.1);
+        }
+
+        .keyboard-shortcuts {
+            font-size: 10px;
+            color: #64748b;
+            line-height: 1.4;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px dashed #1e293b;
         }
 
         /* ── ÁREA DE TRABAJO 1920x1080 ── */
@@ -476,30 +551,80 @@
                 <option value="web_rvm">8. RVM ONNX (Navegador Fallback v4)</option>
             </select>
 
-            <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.2); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar Fondo</button>
-            <button id="arm-only-btn" class="btn" style="background: rgba(0, 255, 136, 0.2); border-color: var(--accent-green); color: var(--accent-green);" title="Aislar exclusivamente manos y brazos (Cero cuerpo / Cero cara)">🦾 Solo Brazos: ON</button>
-            <button id="gf-toggle-btn" class="btn" title="Alternar Fast Guided Filter (Tecla G)">✨ Guided Filter</button>
+            <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
             <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Abrir Proyector</button>
-            <button id="reload-obj-btn" class="btn" title="Recargar figuras interactivas desde objects.json">📦 Figuras</button>
+
+            <!-- MENÚ DESPLEGABLE DE AJUSTES Y VIDEO -->
+            <div class="dropdown-wrapper">
+                <button id="settings-menu-btn" class="btn settings-btn" title="Ajustes de proyección, video de fondo y calibración de puntero">
+                    ⚙️ Ajustes ▾
+                </button>
+
+                <div id="settings-popover" class="settings-popover">
+                    <!-- SECCIÓN 1: VIDEO DE FONDO -->
+                    <div class="popover-section">
+                        <div class="section-title">
+                            <span>🎬 Video de Fondo para Mapeo</span>
+                            <span id="video-status-badge" class="badge-tag">Sin video activo</span>
+                        </div>
+                        <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
+                        <div class="section-row">
+                            <button id="load-video-btn" class="btn" style="flex: 1;">📁 Cargar Video</button>
+                            <button id="toggle-video-btn" class="btn" disabled title="Pausar / Reanudar video en proyector">⏯️ Pausar</button>
+                            <button id="clear-video-btn" class="btn" disabled title="Quitar video de fondo">🗑️ Quitar</button>
+                        </div>
+                        <div class="slider-row" title="Ajustar brillo del video para máxima legibilidad óptica del brazo holográfico">
+                            <span>☀️ Brillo:</span>
+                            <input type="range" id="video-brightness" min="10" max="100" value="70">
+                            <span id="brightness-val" class="slider-val">70%</span>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN 2: FILTROS ANATÓMICOS E IA -->
+                    <div class="popover-section">
+                        <div class="section-title">
+                            <span>🦾 Filtros Anatómicos e IA</span>
+                        </div>
+                        <div class="section-row">
+                            <button id="arm-only-btn" class="btn" style="flex: 1; background: rgba(0, 255, 136, 0.15); border-color: var(--accent-green); color: var(--accent-green);" title="Aislar exclusivamente manos y brazos (Cero cuerpo / Cero cara)">🦾 Solo Brazos: ON</button>
+                            <button id="gf-toggle-btn" class="btn" style="flex: 1;" title="Alternar Fast Guided Filter (Tecla G)">✨ Guided Filter</button>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN 3: CALIBRACIÓN DEL PUNTERO -->
+                    <div class="popover-section">
+                        <div class="section-title">
+                            <span>🎯 Calibración de Puntero</span>
+                            <button id="reset-offset-btn" class="btn" style="padding: 2px 6px; font-size: 10px;">↺ Centrar</button>
+                        </div>
+                        <div class="slider-row" title="Compensar desplazamiento horizontal del puntero respecto al dedo índice">
+                            <span>Offset X:</span>
+                            <input type="range" id="cursor-offset-x" min="-60" max="60" value="-20">
+                            <span id="offset-x-val" class="slider-val">-20px</span>
+                        </div>
+                        <div class="slider-row" title="Compensar desplazamiento vertical del puntero respecto al dedo índice">
+                            <span>Offset Y:</span>
+                            <input type="range" id="cursor-offset-y" min="-60" max="60" value="-10">
+                            <span id="offset-y-val" class="slider-val">-10px</span>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN 4: ESCENA Y ATAJOS -->
+                    <div class="popover-section">
+                        <div class="section-title">
+                            <span>📦 Escena Interactiva</span>
+                        </div>
+                        <div class="section-row">
+                            <button id="reload-obj-btn" class="btn" style="width: 100%;" title="Recargar figuras interactivas desde objects.json">📦 Recargar Figuras (objects.json)</button>
+                        </div>
+                        <div class="keyboard-shortcuts">
+                            <b>Atajos:</b> [Espacio/C] Calibrar Fondo · [B] Siguiente IA · [G] Guided Filter · [V] Video
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </header>
-
-    <!-- ── BARRA DE VIDEO DE FONDO (PRESERVADA Y MEJORADA) ── -->
-    <div class="video-toolbar">
-        <div class="video-label">
-            <span>🎬 Video de Fondo para Mapeo:</span>
-        </div>
-        <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
-        <button id="load-video-btn" class="btn">📁 Seleccionar Video</button>
-        <button id="toggle-video-btn" class="btn" disabled title="Pausar / Reanudar video en proyector">⏯️ Pausar/Reanudar</button>
-        <button id="clear-video-btn" class="btn" disabled title="Quitar video de fondo">🗑️ Quitar</button>
-        <div class="slider-control" title="Ajustar brillo del video para máxima legibilidad óptica del brazo holográfico">
-            <span>☀️ Brillo:</span>
-            <input type="range" id="video-brightness" min="10" max="100" value="70">
-            <span id="brightness-val">70%</span>
-        </div>
-        <span id="video-status-badge" class="badge-tag">Sin video activo</span>
-    </div>
 
     <!-- ── ESCENARIO 1920x1080 ── -->
     <div id="workspace-stage">
@@ -556,6 +681,67 @@
         const openProjBtn = document.getElementById('open-proj-btn');
         const reloadObjBtn = document.getElementById('reload-obj-btn');
 
+        // Menú Desplegable de Ajustes
+        const settingsMenuBtn = document.getElementById('settings-menu-btn');
+        const settingsPopover = document.getElementById('settings-popover');
+        const cursorOffsetXInput = document.getElementById('cursor-offset-x');
+        const cursorOffsetYInput = document.getElementById('cursor-offset-y');
+        const offsetXVal = document.getElementById('offset-x-val');
+        const offsetYVal = document.getElementById('offset-y-val');
+        const resetOffsetBtn = document.getElementById('reset-offset-btn');
+
+        // Estado de Calibración de Puntero (Offset guardado en localStorage)
+        let cursorOffsetX = parseInt(localStorage.getItem('cursor_offset_x') || '-20', 10);
+        let cursorOffsetY = parseInt(localStorage.getItem('cursor_offset_y') || '-10', 10);
+        if (cursorOffsetXInput) cursorOffsetXInput.value = cursorOffsetX;
+        if (cursorOffsetYInput) cursorOffsetYInput.value = cursorOffsetY;
+        if (offsetXVal) offsetXVal.textContent = cursorOffsetX + 'px';
+        if (offsetYVal) offsetYVal.textContent = cursorOffsetY + 'px';
+
+        if (cursorOffsetXInput) {
+            cursorOffsetXInput.oninput = (e) => {
+                cursorOffsetX = parseInt(e.target.value, 10);
+                if (offsetXVal) offsetXVal.textContent = cursorOffsetX + 'px';
+                localStorage.setItem('cursor_offset_x', cursorOffsetX);
+            };
+        }
+        if (cursorOffsetYInput) {
+            cursorOffsetYInput.oninput = (e) => {
+                cursorOffsetY = parseInt(e.target.value, 10);
+                if (offsetYVal) offsetYVal.textContent = cursorOffsetY + 'px';
+                localStorage.setItem('cursor_offset_y', cursorOffsetY);
+            };
+        }
+        if (resetOffsetBtn) {
+            resetOffsetBtn.onclick = () => {
+                cursorOffsetX = 0;
+                cursorOffsetY = 0;
+                if (cursorOffsetXInput) cursorOffsetXInput.value = 0;
+                if (cursorOffsetYInput) cursorOffsetYInput.value = 0;
+                if (offsetXVal) offsetXVal.textContent = '0px';
+                if (offsetYVal) offsetYVal.textContent = '0px';
+                localStorage.setItem('cursor_offset_x', 0);
+                localStorage.setItem('cursor_offset_y', 0);
+                showToast('Offset de puntero centrado');
+            };
+        }
+
+        // Abrir y cerrar menú de ajustes de proyección
+        if (settingsMenuBtn && settingsPopover) {
+            settingsMenuBtn.onclick = (e) => {
+                e.stopPropagation();
+                const isOpen = settingsPopover.classList.toggle('open');
+                settingsMenuBtn.classList.toggle('active', isOpen);
+            };
+            settingsPopover.onclick = (e) => e.stopPropagation();
+            document.addEventListener('click', () => {
+                if (settingsPopover.classList.contains('open')) {
+                    settingsPopover.classList.remove('open');
+                    settingsMenuBtn.classList.remove('active');
+                }
+            });
+        }
+
         // Controles de Video
         const bgVideoInput = document.getElementById('bg-video-input');
         const loadVideoBtn = document.getElementById('load-video-btn');
@@ -583,9 +769,13 @@
         let isBgVideoPlaying = true;
         let ctrlVideoBlobUrl = null;
 
-        // Autoescalado responsivo manteniendo relación 16:9 exacta
+        // Autoescalado responsivo aprovechando todo el lienzo del monitor
         function resizeViewport() {
-            const scale = Math.min(window.innerWidth / 1920, (window.innerHeight - 95) / 1080) * 0.98;
+            const header = document.querySelector('header');
+            const headerH = header ? header.offsetHeight : 52;
+            const availW = window.innerWidth;
+            const availH = window.innerHeight - headerH - 10;
+            const scale = Math.min(availW / 1920, availH / 1080);
             viewport.style.transform = `scale(${scale})`;
         }
         window.addEventListener('resize', resizeViewport);
@@ -823,13 +1013,15 @@
         // ─────────────────────────────────────────────────────────────────────
         function processCursor(x, y, isPinching) {
             camDot.className = 'stat-dot active';
+            const finalX = Math.max(0, Math.min(1920, Math.round(x + cursorOffsetX)));
+            const finalY = Math.max(0, Math.min(1080, Math.round(y + cursorOffsetY)));
             cursorEl.style.display = 'block';
-            cursorEl.style.left = x + 'px';
-            cursorEl.style.top = y + 'px';
+            cursorEl.style.left = finalX + 'px';
+            cursorEl.style.top = finalY + 'px';
 
             let hoveredObj = null;
             for (const obj of polygons) {
-                if (isPointInPolygon({ x, y }, obj.polygon)) {
+                if (isPointInPolygon({ x: finalX, y: finalY }, obj.polygon)) {
                     hoveredObj = obj;
                     break;
                 }
@@ -1129,19 +1321,34 @@
                     data.fill(0);
                     offCtx.putImageData(currentImg, 0, 0);
                     webCtx.clearRect(0, 0, 1920, 1080);
-                    const blackJpeg = webCanvas.toDataURL('image/jpeg', 0.5);
+                    const blackJpeg = offCanvas.toDataURL('image/jpeg', 0.4);
                     primaryChannel.postMessage({ type: 'stream', image: blackJpeg });
                     legacyChannel.postMessage({ type: 'stream', image: blackJpeg });
                     return;
                 }
 
-                const diffMask = new Uint8Array(totalPix);
+                // 1. Umbral de diferencia limpio para suprimir ruido ambiental
+                const webThreshold = 46;
+                const rawDiff = new Uint8Array(totalPix);
                 for (let p = 0; p < totalPix; p++) {
                     const i = p * 4;
                     const dr = Math.abs(data[i]     - bgData[i]);
                     const dg = Math.abs(data[i + 1] - bgData[i + 1]);
                     const db = Math.abs(data[i + 2] - bgData[i + 2]);
-                    if (Math.max(dr, dg, db) > bgThreshold) diffMask[p] = 1;
+                    if (Math.max(dr, dg, db) > webThreshold) rawDiff[p] = 1;
+                }
+
+                // 2. Filtro de vecindad 3x3: eliminar contorno aislado y grano de cámara
+                const diffMask = new Uint8Array(totalPix);
+                for (let y = 1; y < H_WEB - 1; y++) {
+                    const row = y * W_WEB;
+                    for (let x = 1; x < W_WEB - 1; x++) {
+                        const idx = row + x;
+                        if (rawDiff[idx] === 1) {
+                            const nbrs = rawDiff[idx - 1] + rawDiff[idx + 1] + rawDiff[idx - W_WEB] + rawDiff[idx + W_WEB];
+                            if (nbrs >= 2) diffMask[idx] = 1;
+                        }
+                    }
                 }
 
                 let foregroundMask = diffMask;
@@ -1174,7 +1381,8 @@
                         const adx = wX - pX, ady = wY - pY;
                         const aDist = Math.max(15, Math.hypot(adx, ady));
                         const anx = adx / aDist, any = ady / aDist;
-                        const maxArmReach = aDist * 6.5;
+                        const maxArmReach = aDist * 4.5;
+                        const maxArmPerp = aDist * 1.8;
 
                         while (head < tail) {
                             const curr = queue[head++];
@@ -1184,7 +1392,10 @@
                                 const np = nbs[n];
                                 if (np >= 0 && np < totalPix && visited[np] === 0 && diffMask[np] === 1) {
                                     const nx = np % W_WEB, ny = Math.floor(np / W_WEB);
-                                    if ((nx - wX) * anx + (ny - wY) * any < maxArmReach) {
+                                    // Restricción cilíndrica anatómica del brazo: evita que se pinte el torso o cuello
+                                    const alongArm = (nx - wX) * anx + (ny - wY) * any;
+                                    const perpArm = Math.abs((nx - wX) * (-any) + (ny - wY) * anx);
+                                    if (alongArm < maxArmReach && alongArm > -aDist * 2.0 && perpArm < maxArmPerp) {
                                         visited[np] = 1;
                                         queue[tail++] = np;
                                     }
@@ -1212,7 +1423,8 @@
                 webCtx.clearRect(0, 0, 1920, 1080);
                 webCtx.drawImage(offCanvas, 0, 0, 1920, 1080);
 
-                const renderedJpeg = webCanvas.toDataURL('image/jpeg', 0.65);
+                // Enviar JPEG liviano de 640x360 al proyector (eliminando lag y sobrecarga)
+                const renderedJpeg = offCanvas.toDataURL('image/jpeg', 0.55);
                 primaryChannel.postMessage({ type: 'stream', image: renderedJpeg });
                 legacyChannel.postMessage({ type: 'stream', image: renderedJpeg });
 

@@ -25,6 +25,7 @@
             background: #000000;
             transform-origin: center center;
             overflow: hidden;
+            flex-shrink: 0;
         }
 
         /* Capa 1: Video de Fondo para Mapping Dinámico */
@@ -120,9 +121,11 @@
             }
         }, 3500);
 
-        // Auto-escalado responsivo manteniendo relación 16:9 exacta
+        // Auto-escalado responsivo: cubre el 100% de la pantalla sin dejar franjas laterales ni verticales
         function fitProjector() {
-            const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const scaleX = window.innerWidth / 1920;
+            const scaleY = window.innerHeight / 1080;
+            const scale = Math.max(scaleX, scaleY);
             container.style.transform = `scale(${scale})`;
         }
         window.addEventListener('resize', fitProjector);

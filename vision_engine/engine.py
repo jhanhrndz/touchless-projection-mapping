@@ -184,8 +184,8 @@ class VisionEngine:
             return "RVM MobileNetV3 (CUDA - 35 FPS)"
         elif "resnet" in k:
             return "RVM ResNet50 (CUDA - 10 FPS)"
-        elif "fondo" in k or "resta" in k:
-            return "Resta de Fondo (Navegador - Frame Inicial)"
+        elif "background" in k or "fondo" in k or "resta" in k:
+            return "Resta de Fondo (GPU/CPU - 34 FPS)"
         return "FastSAM Point-Prompt (CUDA - 58 FPS)"
 
     def run(
@@ -284,11 +284,12 @@ class VisionEngine:
                 frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1).unsqueeze(0).to(self.device).float() / 255.0
 
                 # Inferencia según el modelo activo
-                if "YOLO" in active_mode and self.yolo_detector.model is not None:
+                mode_lower = active_mode.lower()
+                if "yolo" in mode_lower and self.yolo_detector.model is not None:
                     active_alpha, _ = self.yolo_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
-                elif "FastSAM" in active_mode and self.fastsam_detector.model is not None:
+                elif "fastsam" in mode_lower and self.fastsam_detector.model is not None:
                     active_alpha, _ = self.fastsam_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
-                elif "Resta de Fondo" in active_mode or "Fondo" in active_mode:
+                elif "background" in mode_lower or "resta" in mode_lower or "fondo" in mode_lower:
                     with STATE.lock:
                         if STATE.bg_frame is not None and not self.bg_processor.is_calibrated():
                             self.bg_processor.calibrate(STATE.bg_frame)
@@ -301,7 +302,7 @@ class VisionEngine:
                             if self.bg_processor.bg_frame is not None:
                                 STATE.bg_frame = self.bg_processor.bg_frame.copy()
                 else:
-                    variant = "resnet50" if "ResNet50" in active_mode else "mobilenetv3"
+                    variant = "resnet50" if "resnet" in mode_lower else "mobilenetv3"
                     active_alpha = self.rvm_processor.predict_alpha(
                         frame_tensor,
                         variant=variant,

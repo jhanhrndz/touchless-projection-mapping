@@ -67,7 +67,7 @@ class EngineState:
             return "rvm_mobilenet"
         elif "resnet" in b:
             return "rvm_resnet"
-        elif "fondo" in b or "resta" in b:
+        elif "background" in b or "fondo" in b or "resta" in b:
             return "background_subtraction"
         return "fastsam"
 

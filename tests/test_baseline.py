@@ -114,6 +114,19 @@ def test_http_api_endpoints() -> None:
             assert data["success"] is True
             assert runner.state.active_model == "rvm_mobilenet"
 
+        # 2b. POST /api/model cambiar a 'background_subtraction' (Modelo 5)
+        req_bg = urllib.request.Request(
+            f"{base_url}/api/model",
+            data=json.dumps({"model": "background_subtraction"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_bg, timeout=2) as resp:
+            assert resp.status == 200
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["success"] is True
+            assert runner.state.active_model == "background_subtraction"
+
         # 3. POST /api/settings modificar guided_filter
         req = urllib.request.Request(
             f"{base_url}/api/settings",
