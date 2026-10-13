@@ -230,9 +230,10 @@ class YoloHumanParseDetector:
             model_p = Path(self.cfg.yolo_parse_model_path)
             if not model_p.exists():
                 search_paths = [
+                    MODELS_DIR / "yolo26n-arm.pt",
                     MODELS_DIR / "yolo-human-parse.pt",
+                    Path(__file__).resolve().parent / "yolo26n-arm.pt",
                     Path(__file__).resolve().parent / "yolo-human-parse.pt",
-                    Path(__file__).resolve().parent.parent / "models" / "yolo-human-parse.pt",
                 ]
                 for sp in search_paths:
                     if sp.exists():
@@ -240,16 +241,17 @@ class YoloHumanParseDetector:
                         break
 
             try:
-                self.model = YOLO(str(model_p) if model_p.exists() else "yolo-human-parse.pt")
+                self.model = YOLO(str(model_p) if model_p.exists() else "yolo26n-arm.pt")
                 # Calentamiento inicial rápido de CUDA en segundo plano para evitar congelamiento de 6s
                 if self.device.type == "cuda":
                     dummy_warm = np.zeros((360, 640, 3), dtype=np.uint8)
+                    warm_cls = [0] if (getattr(self.model, "names", {}) and 0 in self.model.names and "arm" in str(self.model.names[0]).lower()) else [3, 4]
                     with torch.inference_mode():
                         _ = self.model.predict(
                             dummy_warm,
                             device=self.device,
                             imgsz=getattr(self.cfg, "parse_imgsz", 384),
-                            classes=[3, 4],
+                            classes=warm_cls,
                             conf=0.10,
                             retina_masks=False,
                             verbose=False
@@ -300,8 +302,13 @@ class YoloHumanParseDetector:
                 return decayed, True
             return self.prev_mask, True
 
-        current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
-        target_classes = [3, 4]
+        is_custom_arm = bool(self.model is not None and getattr(self.model, "names", {}) and 0 in self.model.names and "arm" in str(self.model.names[0]).lower())
+        if is_custom_arm:
+            target_classes = [0]
+            current_conf = max(0.20, self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base)
+        else:
+            target_classes = [3, 4]
+            current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
         parse_sz = getattr(self.cfg, "parse_imgsz", 384)
 
         # Pre-escalado eficiente con OpenCV a 640x360 para transferir 4x menos datos por PCIe

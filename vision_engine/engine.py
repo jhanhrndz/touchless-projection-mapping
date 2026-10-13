@@ -164,8 +164,8 @@ class VisionEngine:
 
     def _resolve_backbone_name(self, model_key: str) -> str:
         k = model_key.lower()
-        if "parse" in k or "human_parse" in k:
-            return "YOLO-Human-Parse (CUDA - 20 FPS)"
+        if "parse" in k or "human_parse" in k or "yolo26" in k:
+            return "YOLO26-Arm (CUDA - 52 FPS - 88% mAP)"
         elif "mobilenet" in k or ("rvm" in k and "resnet" not in k):
             return "RVM MobileNetV3 (CUDA - 60 FPS)"
         elif "resnet" in k:
