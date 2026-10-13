@@ -42,17 +42,12 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            z-index: 50;
+            z-index: 200;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            backdrop-filter: blur(10px);
             flex-wrap: nowrap;
             gap: 12px;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
+            overflow: visible;
         }
-        header::-webkit-scrollbar { display: none; }
 
         .brand-section {
             display: flex;
@@ -297,13 +292,14 @@
             top: calc(100% + 8px);
             right: 0;
             width: 370px;
-            background: rgba(14, 20, 32, 0.97);
+            max-width: min(370px, calc(100vw - 32px));
+            background: rgba(14, 20, 32, 0.98);
             border: 1px solid #293a5a;
             border-radius: 10px;
-            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.88), 0 0 1px rgba(0, 242, 254, 0.3);
+            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.95), 0 0 14px rgba(0, 242, 254, 0.25);
             backdrop-filter: blur(16px);
             padding: 16px;
-            z-index: 100;
+            z-index: 250;
             display: none;
             flex-direction: column;
             gap: 14px;
@@ -725,14 +721,17 @@
 
         // Abrir y cerrar menú de ajustes de proyección
         if (settingsMenuBtn && settingsPopover) {
-            settingsMenuBtn.onclick = (e) => {
+            settingsMenuBtn.addEventListener('click', (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 const isOpen = settingsPopover.classList.toggle('open');
                 settingsMenuBtn.classList.toggle('active', isOpen);
-            };
-            settingsPopover.onclick = (e) => e.stopPropagation();
-            document.addEventListener('click', () => {
-                if (settingsPopover.classList.contains('open')) {
+            });
+            settingsPopover.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            document.addEventListener('click', (e) => {
+                if (!settingsMenuBtn.contains(e.target) && !settingsPopover.contains(e.target)) {
                     settingsPopover.classList.remove('open');
                     settingsMenuBtn.classList.remove('active');
                 }
