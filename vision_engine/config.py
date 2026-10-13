@@ -38,8 +38,8 @@ class EngineConfig:
     yolo_model_path: Path = DEFAULT_YOLO_PATH
 
     # Parámetros YOLO-Human-Parse
-    yolo_parse_conf: float = 0.12
-    yolo_parse_imgsz: int = 640
+    yolo_parse_conf: float = 0.05
+    yolo_parse_imgsz: int = 384
     yolo_parse_model_path: Path = DEFAULT_YOLO_PARSE_PATH
 
     # Parámetros FastSAM

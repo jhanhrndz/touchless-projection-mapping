@@ -1187,7 +1187,7 @@
                     if (precisionBadge) {
                         precisionBadge.textContent = (st.confidence !== null && st.confidence !== undefined)
                             ? `Precisión: ${st.confidence}%`
-                            : 'Precisión: Det.';
+                            : 'Precisión: --';
                     }
                     const dev = (st.device || 'GPU').replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
                     gpuBadge.textContent = `${dev} (${Math.round(st.vram_mb)} MB)`;
