@@ -305,7 +305,7 @@ class YoloHumanParseDetector:
         is_custom_arm = bool(self.model is not None and getattr(self.model, "names", {}) and 0 in self.model.names and "arm" in str(self.model.names[0]).lower())
         if is_custom_arm:
             target_classes = [0]
-            current_conf = max(0.20, self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base)
+            current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
         else:
             target_classes = [3, 4]
             current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
@@ -365,13 +365,14 @@ class YoloHumanParseDetector:
         valid_instances = []
         total_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
 
+        allowed_classes = (0,) if is_custom_arm else (3, 4)
         for i in range(num_instances):
             inst_area = float(masks_tensor[i].sum().item()) / total_pixels
             if inst_area < 0.0003:
                 continue
 
-            cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else 3
-            if cls_id in (3, 4):
+            cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else (0 if is_custom_arm else 3)
+            if cls_id in allowed_classes:
                 valid_instances.append(masks_tensor[i])
 
         if valid_instances:
