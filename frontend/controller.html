@@ -35,27 +35,37 @@
         header {
             background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
-            padding: 8px 18px;
+            padding: 0 16px;
+            height: 48px;
+            min-height: 48px;
+            max-height: 48px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             z-index: 50;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
-            flex-wrap: wrap;
-            gap: 10px;
+            flex-wrap: nowrap;
+            gap: 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
+        header::-webkit-scrollbar { display: none; }
 
         .brand-section {
             display: flex;
             align-items: center;
             gap: 12px;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
 
         .brand-logo {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 800;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
             color: #fff;
             text-shadow: 0 0 10px var(--accent-cyan);
             display: flex;
@@ -67,51 +77,73 @@
             background: rgba(0, 242, 254, 0.15);
             border: 1px solid var(--accent-cyan);
             color: var(--accent-cyan);
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
-            padding: 2px 8px;
+            padding: 2px 7px;
             border-radius: 4px;
             letter-spacing: 0.5px;
         }
 
+        /* Alerta de Clic / Pellizco flotante desacoplada del flujo de barras */
         .pinch-alert {
-            display: none;
+            position: fixed;
+            top: 54px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-6px) scale(0.92);
             color: #000;
             background: var(--accent-yellow);
             font-weight: 800;
             font-size: 11px;
-            padding: 3px 10px;
-            border-radius: 12px;
-            box-shadow: 0 0 14px var(--accent-yellow);
-            animation: pulse-pinch 0.5s infinite alternate;
+            letter-spacing: 0.5px;
+            padding: 5px 14px;
+            border-radius: 20px;
+            box-shadow: 0 0 18px rgba(255, 208, 0, 0.8), 0 4px 12px rgba(0,0,0,0.6);
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.12s ease, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .pinch-alert.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0) scale(1);
+            animation: pulse-pinch 0.4s infinite alternate;
         }
         @keyframes pulse-pinch {
-            from { transform: scale(0.96); opacity: 0.9; }
-            to { transform: scale(1.05); opacity: 1; }
+            from { transform: translateX(-50%) translateY(0) scale(0.97); opacity: 0.92; }
+            to { transform: translateX(-50%) translateY(0) scale(1.04); opacity: 1; }
         }
 
-        /* Telemetría */
+        /* Telemetría Compacta */
         .telemetry-row {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 12px;
-            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 11px;
+            flex-wrap: nowrap;
+            flex-shrink: 1;
+            overflow: hidden;
         }
 
         .stat-badge {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             background: rgba(0,0,0,0.45);
             border: 1px solid #1f293d;
-            padding: 4px 10px;
+            padding: 3px 8px;
             border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .stat-dot {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
             background: #475569;
             transition: all 0.3s;
@@ -121,12 +153,13 @@
         .stat-dot.active { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan); }
         .stat-dot.pinch { background: var(--accent-yellow); box-shadow: 0 0 12px var(--accent-yellow); }
 
-        /* Controles */
+        /* Controles agrupados */
         .controls-group {
             display: flex;
             align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
+            gap: 6px;
+            flex-wrap: nowrap;
+            flex-shrink: 0;
         }
 
         select.model-dropdown {
@@ -519,50 +552,52 @@
 
     <!-- ── BARRA SUPERIOR ── -->
     <header>
+        <!-- SECCIÓN IZQUIERDA: MARCA -->
         <div class="brand-section">
             <div class="brand-logo">
-                <span>⚡ PROYECCIÓN INTERACTIVA</span>
-                <span class="screen-tag">CONTROLADOR (PANTALLA 1)</span>
+                <span>⚡ PROYECCIÓN</span>
+                <span class="screen-tag">CONTROL</span>
             </div>
-            <div class="pinch-alert" id="pinch-alert">🤌 CLIC PELLIZCO</div>
         </div>
 
+        <!-- SECCIÓN CENTRAL: TELEMETRÍA -->
         <div class="telemetry-row">
-            <div class="stat-badge">
+            <div class="stat-badge" title="Estado de conexión con el Backend">
                 <span id="ws-dot" class="stat-dot offline"></span>
-                <span id="ws-label">Docker (8080): Conectando...</span>
+                <span id="ws-label">Backend</span>
             </div>
-            <div class="stat-badge">
+            <div class="stat-badge" title="Estado del Proyector">
                 <span id="proj-dot" class="stat-dot offline"></span>
-                <span id="proj-label">Proyector: Esperando...</span>
+                <span id="proj-label">Proyector</span>
             </div>
-            <div class="stat-badge">
+            <div class="stat-badge" title="Cuadros por segundo">
                 <span id="cam-dot" class="stat-dot active"></span>
                 <span id="fps-label">0.0 FPS</span>
             </div>
-            <div class="stat-badge" id="latency-badge">
-                <span>Latencia: 0.0 ms</span>
+            <div class="stat-badge" id="latency-badge" title="Latencia del pipeline de visión">
+                <span>0.0 ms</span>
             </div>
-            <div class="stat-badge" id="precision-badge" style="color: var(--accent-cyan);">
+            <div class="stat-badge" id="precision-badge" style="color: var(--accent-cyan);" title="Certeza del modelo">
                 <span>Precisión: --%</span>
             </div>
-            <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);">
-                <span>GPU: Detectando...</span>
+            <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);" title="GPU activa">
+                <span>GPU</span>
             </div>
         </div>
 
-            <!-- SELECTOR DINÁMICO DE MODELOS -->
+        <!-- SECCIÓN DERECHA: CONTROLES AGRUPADOS -->
+        <div class="controls-group">
             <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
-                <option value="rvm_mobilenet">1. RVM MobileNetV3 (CUDA - 60 FPS) [Recomendado]</option>
-                <option value="rvm_resnet">2. RVM ResNet50 (CUDA - 30 FPS) [Alta Calidad]</option>
-                <option value="yolo">3. YOLO11-seg (CUDA - 45 FPS) [Cuerpo Completo]</option>
-                <option value="background_subtraction">4. Resta de Fondo (GPU/CPU - 60 FPS)</option>
-                <option value="yolo_human_parse">5. YOLO-Human-Parse (CUDA - 20 FPS) [Brazos y Partes]</option>
+                <option value="rvm_mobilenet">1. RVM MobileNetV3 (60 FPS) [Recomendado]</option>
+                <option value="rvm_resnet">2. RVM ResNet50 (30 FPS) [Alta Calidad]</option>
+                <option value="yolo">3. YOLO11-seg (45 FPS) [Cuerpo Completo]</option>
+                <option value="background_subtraction">4. Resta de Fondo (60 FPS)</option>
+                <option value="yolo_human_parse">5. YOLO-Human-Parse (20 FPS) [Brazos]</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
-            <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Abrir Proyector</button>
-            <a id="header-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-header" title="Abrir Editor de Figuras del Backend (puerto 8000)">✏️ Editar Figuras</a>
+            <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Proyector</button>
+            <a id="header-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-header" title="Abrir Editor de Figuras del Backend (puerto 8000)">✏️ Editor</a>
 
             <!-- MENÚ DESPLEGABLE DE AJUSTES Y VIDEO -->
             <div class="dropdown-wrapper">
@@ -625,6 +660,9 @@
             </div>
         </div>
     </header>
+
+    <!-- Indicador de Clic Flotante (no afecta el layout ni las barras) -->
+    <div class="pinch-alert" id="pinch-alert">🤌 CLIC PELLIZCO</div>
 
     <!-- ── ESCENARIO 1920x1080 ── -->
     <div id="workspace-stage">
@@ -729,9 +767,9 @@
         // Autoescalado responsivo aprovechando todo el lienzo del monitor
         function resizeViewport() {
             const header = document.querySelector('header');
-            const headerH = header ? header.offsetHeight : 52;
+            const headerH = header ? header.offsetHeight : 48;
             const availW = window.innerWidth;
-            const availH = window.innerHeight - headerH - 10;
+            const availH = window.innerHeight - headerH - 2;
             const scale = Math.min(availW / 1920, availH / 1080);
             viewport.style.transform = `scale(${scale})`;
         }
@@ -759,7 +797,7 @@
         // ─────────────────────────────────────────────────────────────────────
         function handleProjectionReady() {
             projDot.className = 'stat-dot online';
-            projLabel.textContent = 'Proyector: Conectado';
+            projLabel.textContent = 'Proyector: OK';
             log('✓ Ventana de proyección conectada en tiempo real', 'success');
             showToast('Proyector conectado');
 
@@ -967,12 +1005,12 @@
                 ws = new WebSocket(`ws://${window.location.hostname || 'localhost'}:${port}/ws`);
                 ws.onopen = () => {
                     wsDot.className = 'stat-dot online';
-                    wsLabel.textContent = `Backend (${port}): Conectado`;
+                    wsLabel.textContent = `Backend (${port}): OK`;
                     log(`✓ Conectado a Backend WebSocket (puerto ${port})`, 'success');
                 };
                 ws.onclose = () => {
                     wsDot.className = 'stat-dot offline';
-                    wsLabel.textContent = `Backend: Desconectado`;
+                    wsLabel.textContent = `Backend: Off`;
                     currentPortIdx = (currentPortIdx + 1) % wsPorts.length;
                     setTimeout(initWebSocket, 2500);
                 };
@@ -1058,10 +1096,10 @@
 
             if (isPinching) {
                 cursorEl.classList.add('pinching');
-                pinchAlert.style.display = 'block';
+                pinchAlert.classList.add('active');
             } else {
                 cursorEl.classList.remove('pinching');
-                pinchAlert.style.display = 'none';
+                pinchAlert.classList.remove('active');
             }
 
             if (hoveredObj) {
@@ -1105,7 +1143,7 @@
 
         function processCursorLost() {
             cursorEl.style.display = 'none';
-            pinchAlert.style.display = 'none';
+            pinchAlert.classList.remove('active');
             if (currentHoveredId) {
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
@@ -1145,13 +1183,14 @@
                 if (res.ok) {
                     const st = await res.json();
                     fpsLabel.textContent = `${st.fps} FPS`;
-                    latencyBadge.textContent = `Latencia: ${st.latency_ms} ms`;
+                    latencyBadge.textContent = `${st.latency_ms} ms`;
                     if (precisionBadge) {
                         precisionBadge.textContent = (st.confidence !== null && st.confidence !== undefined)
                             ? `Precisión: ${st.confidence}%`
-                            : 'Precisión: Determinista';
+                            : 'Precisión: Det.';
                     }
-                    gpuBadge.textContent = `GPU: ${st.device} (${st.vram_mb} MB)`;
+                    const dev = (st.device || 'GPU').replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
+                    gpuBadge.textContent = `${dev} (${Math.round(st.vram_mb)} MB)`;
                     guidedFilterActive = st.guided_filter;
                     gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.2)' : '';
 

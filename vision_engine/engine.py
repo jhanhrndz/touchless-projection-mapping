@@ -301,7 +301,7 @@ class VisionEngine:
 
                 if "parse" in mode_lower or "human_parse" in mode_lower:
                     active_alpha, _ = self.yolo_parse_detector.predict_mask(
-                        frame_bgr, hand_landmarks_list, arm_only=arm_only, device=self.device
+                        frame_bgr, hand_landmarks_list, arm_only=True, device=self.device
                     )
                     measured_conf = self.yolo_parse_detector.last_confidence
                 elif "mobilenet" in mode_lower or ("rvm" in mode_lower and "resnet" not in mode_lower):

@@ -125,8 +125,8 @@ def test_yolo_human_parse_detector_initialization() -> None:
     assert detector is not None
     assert detector.cfg.retina_masks is True
     assert detector.hold_frames == 0
-    assert detector.max_hold_frames == 6
-    assert detector.decay_factor == 0.90
+    assert detector.max_hold_frames == 8
+    assert detector.decay_factor == 0.92
     assert detector.ema_alpha == 0.70
     assert detector.last_confidence == 0.0
 
