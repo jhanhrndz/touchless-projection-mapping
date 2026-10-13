@@ -30,7 +30,7 @@ except Exception:
 class YoloPipelineConfig:
     """Configuración tipada del pipeline de detección YOLO / FastSAM / Human-Parse."""
     yolo_model_path: str = "yolo11n-seg.pt"
-    yolo_parse_model_path: str = "yolo-human-parse.pt"
+    yolo_parse_model_path: str = "best-kaggle.pt"
     fastsam_model_path: str = "FastSAM-s.pt"
     imgsz: int = 640
     conf_base: float = 0.28
@@ -230,8 +230,10 @@ class YoloHumanParseDetector:
             model_p = Path(self.cfg.yolo_parse_model_path)
             if not model_p.exists():
                 search_paths = [
+                    MODELS_DIR / "best-kaggle.pt",
                     MODELS_DIR / "yolo26n-arm.pt",
                     MODELS_DIR / "yolo-human-parse.pt",
+                    Path(__file__).resolve().parent / "best-kaggle.pt",
                     Path(__file__).resolve().parent / "yolo26n-arm.pt",
                     Path(__file__).resolve().parent / "yolo-human-parse.pt",
                 ]
@@ -241,7 +243,8 @@ class YoloHumanParseDetector:
                         break
 
             try:
-                self.model = YOLO(str(model_p) if model_p.exists() else "yolo26n-arm.pt")
+                fallback = "best-kaggle.pt" if (MODELS_DIR / "best-kaggle.pt").exists() else "yolo26n-arm.pt"
+                self.model = YOLO(str(model_p) if model_p.exists() else fallback)
                 # Calentamiento inicial rápido de CUDA en segundo plano para evitar congelamiento de 6s
                 if self.device.type == "cuda":
                     dummy_warm = np.zeros((360, 640, 3), dtype=np.uint8)
@@ -317,8 +320,8 @@ class YoloHumanParseDetector:
 
         if is_custom_arm:
             target_classes = [0]
-            current_conf = 0.20 if self.tracking_active else 0.24
-            parse_sz = 480
+            current_conf = 0.16 if self.tracking_active else 0.20
+            parse_sz = 640
         else:
             target_classes = [3, 4]
             current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
@@ -348,68 +351,86 @@ class YoloHumanParseDetector:
             return torch.zeros((1, 1, h, w), device=target_device), False
 
         if not results or results[0].masks is None or len(results[0].masks.data) == 0:
-            if self.hold_frames > 0 and self.prev_mask is not None:
+            if is_custom_arm and has_hands:
+                # Si MediaPipe detecta manos pero YOLO no arrojó máscaras en este frame,
+                # permitimos continuar para renderizar la silueta anatómica de la mano sin parpadeo
+                results_has_masks = False
+            elif self.hold_frames > 0 and self.prev_mask is not None:
                 self.hold_frames -= 1
                 decayed = self.prev_mask * self.decay_factor
                 self.prev_mask = decayed.clone()
                 return decayed, True
-            self.tracking_active = False
-            self.prev_mask = None
-            self.last_confidence = 0.0
-            return torch.zeros((1, 1, h, w), device=target_device), False
+            else:
+                self.tracking_active = False
+                self.prev_mask = None
+                self.last_confidence = 0.0
+                return torch.zeros((1, 1, h, w), device=target_device), False
+        else:
+            results_has_masks = True
 
-        if results[0].boxes is not None and len(results[0].boxes) > 0:
+        if results_has_masks and results[0].boxes is not None and len(results[0].boxes) > 0:
             self.last_confidence = float(results[0].boxes.conf.mean().item())
         elif self.hold_frames > 0 and self.last_confidence > 0:
             pass
+        elif is_custom_arm and has_hands:
+            self.last_confidence = 0.95
         else:
             self.last_confidence = 0.0
 
-        masks_tensor = results[0].masks.data  # [N, H_out, W_out]
-        boxes_tensor = results[0].boxes.xyxy if (results[0].boxes is not None and hasattr(results[0].boxes, "xyxy")) else None
-        classes_tensor = results[0].boxes.cls if results[0].boxes is not None else None
-        num_instances = masks_tensor.shape[0]
+        masks_tensor = results[0].masks.data if results_has_masks else None  # [N, H_out, W_out]
+        boxes_tensor = results[0].boxes.xyxy if (results_has_masks and results[0].boxes is not None and hasattr(results[0].boxes, "xyxy")) else None
+        classes_tensor = results[0].boxes.cls if (results_has_masks and results[0].boxes is not None) else None
+        num_instances = masks_tensor.shape[0] if masks_tensor is not None else 0
 
-        # Calcular zonas de manos para discriminación espacial (rechazar falsos positivos en paredes lejanas)
-        hand_zones = []
+        # Obtener puntos anatómicos de muñeca y palma para filtrado espacial estricto
+        # Una instancia de brazo REAL debe estar conectada anatómicamente a la muñeca o nudillos
+        hand_anchors = []
         if is_custom_arm and has_hands and hand_landmarks_list:
             for hl in hand_landmarks_list:
-                xs = [getattr(lm, "x", 0.0) * w for lm in hl]
-                ys = [getattr(lm, "y", 0.0) * h for lm in hl]
-                min_x, max_x = min(xs), max(xs)
-                min_y, max_y = min(ys), max(ys)
-                pad_x = max(100.0, (max_x - min_x) * 2.5)
-                pad_y = max(100.0, (max_y - min_y) * 2.5)
-                hand_zones.append((min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y))
+                for pt_idx in (0, 1, 5, 9, 13, 17):
+                    if pt_idx < len(hl):
+                        hand_anchors.append((
+                            getattr(hl[pt_idx], "x", 0.0) * w,
+                            getattr(hl[pt_idx], "y", 0.0) * h
+                        ))
 
         valid_instances = []
-        total_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
-        allowed_classes = (0,) if is_custom_arm else (3, 4)
+        if masks_tensor is not None and num_instances > 0:
+            total_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
+            allowed_classes = (0,) if is_custom_arm else (3, 4)
 
-        for i in range(num_instances):
-            inst_area = float(masks_tensor[i].sum().item()) / total_pixels
-            if inst_area < 0.0003:
-                continue
+            for i in range(num_instances):
+                inst_area = float(masks_tensor[i].sum().item()) / total_pixels
+                if inst_area < 0.0003:
+                    continue
 
-            cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else (0 if is_custom_arm else 3)
-            if cls_id not in allowed_classes:
-                continue
+                cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else (0 if is_custom_arm else 3)
+                if cls_id not in allowed_classes:
+                    continue
 
-            # Filtrado espacial: la caja debe intersectar la zona de la mano para no pintar fondos
-            if is_custom_arm and hand_zones and boxes_tensor is not None and i < len(boxes_tensor):
-                bx1, by1, bx2, by2 = boxes_tensor[i].tolist()
-                overlaps_hand = any(
-                    not (bx2 < hz[0] or bx1 > hz[2] or by2 < hz[1] or by1 > hz[3])
-                    for hz in hand_zones
-                )
-                if not overlaps_hand:
-                    continue  # Es un falso positivo del fondo lejos de la mano
+                # Filtrado espacial estricto: la propuesta debe estar anatómicamente conectada
+                # a la muñeca o nudillos de la mano (distancia euclidiana máxima de 80px)
+                if is_custom_arm and hand_anchors and boxes_tensor is not None and i < len(boxes_tensor):
+                    bx1, by1, bx2, by2 = boxes_tensor[i].tolist()
+                    min_dist = float("inf")
+                    for ax, ay in hand_anchors:
+                        dx = max(0.0, bx1 - ax, ax - bx2)
+                        dy = max(0.0, by1 - ay, ay - by2)
+                        d = (dx * dx + dy * dy) ** 0.5
+                        if d < min_dist:
+                            min_dist = d
+                    if min_dist > 80.0:
+                        continue  # Falso positivo en el fondo o muebles lejanos
 
-            valid_instances.append(masks_tensor[i])
+                valid_instances.append(masks_tensor[i])
 
         if valid_instances:
             stacked = torch.stack(valid_instances)
             combined = torch.clamp(stacked.sum(dim=0, keepdim=True), 0.0, 1.0)
+            self.tracking_active = True
+        elif is_custom_arm and has_hands:
+            # Mano presente: se inicializa en cero para rellenar con la envolvente anatómica
+            combined = torch.zeros((1, 1, h, w), device=target_device)
             self.tracking_active = True
         elif self.hold_frames > 0 and self.prev_mask is not None:
             self.hold_frames -= 1
