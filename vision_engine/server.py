@@ -40,7 +40,7 @@ class EngineState:
         self.backbone_name: str = "RVM MobileNetV3 (CUDA - 60 FPS)"
         self.requested_mode: Optional[str] = None
         self.reset_requested: bool = False
-        self.guided_filter_on: bool = False
+        self.guided_filter_on: bool = True
         self.arm_only: bool = False
         self.bg_frame = None
         self.bg_threshold: int = 35

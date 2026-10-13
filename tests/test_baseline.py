@@ -67,7 +67,7 @@ def test_server_state_defaults() -> None:
     """Verifica valores iniciales del estado compartido del servidor."""
     s = ServerState()
     assert s.arm_only is False
-    assert s.guided_filter is False
+    assert s.guided_filter is True
     assert s.fps == 0.0
     assert s.frame_count == 0
     assert s.is_running is True

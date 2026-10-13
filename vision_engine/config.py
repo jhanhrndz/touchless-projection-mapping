@@ -28,7 +28,7 @@ class EngineConfig:
     # Selección de modelo
     default_model: str = "rvm_mobilenet"  # RVM MobileNetV3 por defecto (óptimo para cuerpo completo)
     arm_only: bool = False                # Segmentación nativa de cuerpo completo
-    guided_filter: bool = False           # Filtro guiado rápido en GPU
+    guided_filter: bool = True            # Filtro guiado rápido en GPU (activado por defecto para máxima nitidez)
     gf_radius: int = 4                    # Radio de ventana del filtro guiado
     gf_eps: float = 1e-2                  # Regularización épsilon
 
