@@ -19,7 +19,12 @@ PIPELINES_DIR = PROJECT_ROOT / "vision_engine" / "pipelines"
 if str(PIPELINES_DIR) not in sys.path:
     sys.path.insert(0, str(PIPELINES_DIR))
 
-from yolo_pipeline import FastSamArmDetector, YoloArmDetector, YoloPipelineConfig
+from yolo_pipeline import (
+    FastSamArmDetector,
+    YoloArmDetector,
+    YoloHumanParseDetector,
+    YoloPipelineConfig,
+)
 
 
 def test_yolo_detector_initialization() -> None:
@@ -111,3 +116,38 @@ def test_yolo_predict_output_contract() -> None:
     assert float(mask.min()) >= 0.0
     assert float(mask.max()) <= 1.0
     assert mask.device.type == device.type
+
+
+def test_yolo_human_parse_detector_initialization() -> None:
+    """Verifica que el detector YOLO-Human-Parse inicialice correctamente con su configuración."""
+    cfg = YoloPipelineConfig(retina_masks=True, use_half=False)
+    detector = YoloHumanParseDetector(config=cfg, device=torch.device("cpu"))
+    assert detector is not None
+    assert detector.cfg.retina_masks is True
+    assert detector.hold_frames == 0
+    assert detector.max_hold_frames == 6
+    assert detector.decay_factor == 0.90
+    assert detector.ema_alpha == 0.70
+    assert detector.last_confidence == 0.0
+
+
+def test_yolo_human_parse_predict_output_contract() -> None:
+    """
+    Verifica que YOLO-Human-Parse cumpla el contrato tensorial [1, 1, H, W]
+    y gestione la persistencia temporal / histéresis ante fotogramas vacíos.
+    """
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    detector = YoloHumanParseDetector(device=device)
+    if detector.model is None:
+        pytest.skip("Modelo YOLO-Human-Parse no disponible en el entorno")
+
+    dummy_frame = np.full((720, 1280, 3), 128, dtype=np.uint8)
+    mask, valid = detector.predict_mask(dummy_frame, hand_landmarks_list=None, device=device)
+
+    assert mask.shape == (1, 1, 720, 1280)
+    assert float(mask.min()) >= 0.0
+    assert float(mask.max()) <= 1.0
+    assert mask.device.type == device.type
+    # Verificamos que last_confidence sea un float válido entre 0.0 y 1.0
+    assert 0.0 <= detector.last_confidence <= 1.0
+

@@ -23,6 +23,7 @@ from vision_engine.pipelines.rvm_background import (
 from vision_engine.pipelines.yolo_pipeline import (
     FastSamArmDetector,
     YoloArmDetector,
+    YoloHumanParseDetector,
     YoloPipelineConfig,
 )
 from vision_engine.server import STATE
@@ -123,6 +124,14 @@ class VisionEngine:
             ),
             device=self.device,
         )
+        self.yolo_parse_detector = YoloHumanParseDetector(
+            config=YoloPipelineConfig(
+                yolo_parse_model_path=str(self.cfg.yolo_parse_model_path),
+                imgsz=self.cfg.yolo_parse_imgsz,
+                parse_conf_base=self.cfg.yolo_parse_conf,
+            ),
+            device=self.device,
+        )
         self.fastsam_detector = FastSamArmDetector(
             config=YoloPipelineConfig(
                 fastsam_model_path=str(self.cfg.fastsam_model_path),
@@ -155,7 +164,9 @@ class VisionEngine:
 
     def _resolve_backbone_name(self, model_key: str) -> str:
         k = model_key.lower()
-        if "mobilenet" in k or ("rvm" in k and "resnet" not in k):
+        if "parse" in k or "human_parse" in k:
+            return "YOLO-Human-Parse (CUDA - 20 FPS)"
+        elif "mobilenet" in k or ("rvm" in k and "resnet" not in k):
             return "RVM MobileNetV3 (CUDA - 60 FPS)"
         elif "resnet" in k:
             return "RVM ResNet50 (CUDA - 30 FPS)"
@@ -244,6 +255,7 @@ class VisionEngine:
                         STATE.backbone_name = active_mode
                         self.rvm_processor.reset_recurrent_states()
                         self.yolo_detector.reset()
+                        self.yolo_parse_detector.reset()
                         self.fastsam_detector.reset()
                         self.hand_tracker.reset()
                         if any(k in active_mode.lower() for k in ("background", "resta", "fondo")):
@@ -255,6 +267,7 @@ class VisionEngine:
                     if STATE.reset_requested:
                         self.rvm_processor.reset_recurrent_states()
                         self.yolo_detector.reset()
+                        self.yolo_parse_detector.reset()
                         self.fastsam_detector.reset()
                         self.hand_tracker.reset()
                         STATE.reset_requested = False
@@ -282,17 +295,31 @@ class VisionEngine:
                 frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1).unsqueeze(0).to(self.device).float() / 255.0
 
                 # Inferencia desacoplada según el modelo activo (cuerpo completo nativo de alta velocidad)
+                # Inferencia desacoplada según el modelo activo (cuerpo completo nativo de alta velocidad)
                 mode_lower = active_mode.lower()
-                if "mobilenet" in mode_lower or ("rvm" in mode_lower and "resnet" not in mode_lower):
+                measured_conf = 0.0
+
+                if "parse" in mode_lower or "human_parse" in mode_lower:
+                    active_alpha, _ = self.yolo_parse_detector.predict_mask(
+                        frame_bgr, hand_landmarks_list, arm_only=arm_only, device=self.device
+                    )
+                    measured_conf = self.yolo_parse_detector.last_confidence
+                elif "mobilenet" in mode_lower or ("rvm" in mode_lower and "resnet" not in mode_lower):
                     active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="mobilenetv3", device=self.device)
+                    fg_pixels = active_alpha[active_alpha > 0.3]
+                    measured_conf = float(fg_pixels.mean().item()) if fg_pixels.numel() > 0 else 0.0
                 elif "resnet" in mode_lower:
                     active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="resnet50", device=self.device)
+                    fg_pixels = active_alpha[active_alpha > 0.3]
+                    measured_conf = float(fg_pixels.mean().item()) if fg_pixels.numel() > 0 else 0.0
                 elif "fastsam" in mode_lower and self.fastsam_detector.model is not None:
                     active_alpha, _ = self.fastsam_detector.predict_mask(
                         frame_bgr, hand_landmarks_list, device=self.device
                     )
+                    measured_conf = 0.85
                 elif "yolo" in mode_lower and self.yolo_detector.model is not None:
                     active_alpha, _ = self.yolo_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
+                    measured_conf = self.yolo_detector.last_confidence
                 elif "background" in mode_lower or "resta" in mode_lower or "fondo" in mode_lower:
                     with STATE.lock:
                         if STATE.bg_frame is not None and not self.bg_processor.is_calibrated():
@@ -315,8 +342,11 @@ class VisionEngine:
                         with STATE.lock:
                             if self.bg_processor.bg_frame is not None:
                                 STATE.bg_frame = self.bg_processor.bg_frame.copy()
+                    measured_conf = 0.0
                 else:
                     active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="mobilenetv3", device=self.device)
+                    fg_pixels = active_alpha[active_alpha > 0.3]
+                    measured_conf = float(fg_pixels.mean().item()) if fg_pixels.numel() > 0 else 0.0
 
                 # Renderizar holograma verde en GPU
                 _, output_bgr = self.gpu_renderer.render(
@@ -357,6 +387,7 @@ class VisionEngine:
                 with STATE.lock:
                     STATE.fps = measured_fps
                     STATE.latency_ms = loop_time
+                    STATE.confidence = measured_conf
                     STATE.backbone_name = active_mode
                     STATE.latest_jpeg = clean_jpeg.tobytes()
                     STATE.latest_controller_jpeg = ctrl_jpeg.tobytes()

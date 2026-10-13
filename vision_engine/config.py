@@ -16,6 +16,7 @@ BACKEND_DATA_DIR = ROOT_DIR / "backend" / "data"
 
 # Rutas de modelos predeterminados
 DEFAULT_YOLO_PATH = MODELS_DIR / "yolo11n-seg.pt"
+DEFAULT_YOLO_PARSE_PATH = MODELS_DIR / "yolo-human-parse.pt"
 DEFAULT_FASTSAM_PATH = MODELS_DIR / "FastSAM-s.pt"
 DEFAULT_TASK_PATH = MODELS_DIR / "hand_landmarker.task"
 OBJECTS_PATH = FRONTEND_DIR / "objects.json" if (FRONTEND_DIR / "objects.json").exists() else (BACKEND_DATA_DIR / "objects.json")
@@ -32,9 +33,14 @@ class EngineConfig:
     gf_eps: float = 1e-2                  # Regularización épsilon
 
     # Parámetros YOLO
-    yolo_conf: float = 0.18
+    yolo_conf: float = 0.28
     yolo_imgsz: int = 640
     yolo_model_path: Path = DEFAULT_YOLO_PATH
+
+    # Parámetros YOLO-Human-Parse
+    yolo_parse_conf: float = 0.22
+    yolo_parse_imgsz: int = 640
+    yolo_parse_model_path: Path = DEFAULT_YOLO_PARSE_PATH
 
     # Parámetros FastSAM
     fastsam_conf: float = 0.20

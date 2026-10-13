@@ -36,6 +36,7 @@ class EngineState:
         self.latest_raw_bgr = None
         self.fps: float = 0.0
         self.latency_ms: float = 0.0
+        self.confidence: float = 0.0
         self.backbone_name: str = "RVM MobileNetV3 (CUDA - 60 FPS)"
         self.requested_mode: Optional[str] = None
         self.reset_requested: bool = False
@@ -60,7 +61,9 @@ class EngineState:
     def active_model(self) -> str:
         with self.lock:
             b = (self.requested_mode or self.backbone_name).lower()
-        if "mobilenet" in b or "rvm_m" in b:
+        if "parse" in b or "human_parse" in b:
+            return "yolo_human_parse"
+        elif "mobilenet" in b or "rvm_m" in b:
             return "rvm_mobilenet"
         elif "resnet" in b or "rvm_r" in b:
             return "rvm_resnet"
@@ -168,6 +171,7 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                 status_data = {
                     "fps": round(STATE.fps, 1),
                     "latency_ms": round(STATE.latency_ms, 1),
+                    "confidence": round(STATE.confidence * 100, 1) if STATE.confidence > 0.0 else None,
                     "backbone": STATE.backbone_name,
                     "active_model": STATE.active_model,
                     "device": dev_name,

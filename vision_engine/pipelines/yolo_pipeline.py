@@ -28,12 +28,15 @@ except Exception:
 
 @dataclass
 class YoloPipelineConfig:
-    """Configuración tipada del pipeline de detección YOLO / FastSAM."""
+    """Configuración tipada del pipeline de detección YOLO / FastSAM / Human-Parse."""
     yolo_model_path: str = "yolo11n-seg.pt"
+    yolo_parse_model_path: str = "yolo-human-parse.pt"
     fastsam_model_path: str = "FastSAM-s.pt"
     imgsz: int = 640
     conf_base: float = 0.28
     conf_tracking: float = 0.22
+    parse_conf_base: float = 0.22
+    parse_conf_tracking: float = 0.16
     fastsam_conf: float = 0.20
     retina_masks: bool = True
     use_half: bool = True
@@ -50,6 +53,7 @@ class YoloArmDetector:
         self.prev_mask: Optional[torch.Tensor] = None
         self.hold_frames: int = 0
         self.max_hold_frames: int = 5
+        self.last_confidence: float = 0.0
         self.model: Optional[Any] = None
 
         if HAS_ULTRALYTICS:
@@ -75,6 +79,7 @@ class YoloArmDetector:
         self.tracking_active = False
         self.prev_mask = None
         self.hold_frames = 0
+        self.last_confidence = 0.0
 
     def predict_mask(
         self,
@@ -130,6 +135,11 @@ class YoloArmDetector:
             self.tracking_active = False
             self.prev_mask = None
             return torch.zeros((1, 1, h, w), device=target_device), False
+
+        if results[0].boxes is not None and len(results[0].boxes) > 0:
+            self.last_confidence = float(results[0].boxes.conf.mean().item())
+        else:
+            self.last_confidence = 0.0
 
         masks_tensor = results[0].masks.data  # [N, H_out, W_out]
         num_instances = masks_tensor.shape[0]
@@ -191,6 +201,185 @@ class YoloArmDetector:
         # Suavizado temporal EMA para máxima estabilidad y fluidez sin parpadeos
         if self.prev_mask is not None and self.prev_mask.shape == best_mask.shape:
             best_mask = best_mask * 0.75 + self.prev_mask * 0.25
+        self.prev_mask = best_mask.clone()
+        self.hold_frames = self.max_hold_frames
+
+        return best_mask, True
+
+
+class YoloHumanParseDetector:
+    """Detector y segmentador anatómico de partes humanas basado en YOLO-Human-Parse (Fase 2)."""
+
+    def __init__(self, config: Optional[YoloPipelineConfig] = None, device: Optional[torch.device] = None) -> None:
+        self.cfg = config or YoloPipelineConfig()
+        self.device = device or torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.tracking_active: bool = False
+        self.prev_mask: Optional[torch.Tensor] = None
+        self.hold_frames: int = 0
+        self.max_hold_frames: int = 6
+        self.decay_factor: float = 0.90
+        self.ema_alpha: float = 0.70
+        self.last_confidence: float = 0.0
+        self.model: Optional[Any] = None
+
+        if HAS_ULTRALYTICS:
+            model_p = Path(self.cfg.yolo_parse_model_path)
+            if not model_p.exists():
+                search_paths = [
+                    MODELS_DIR / "yolo-human-parse.pt",
+                    Path(__file__).resolve().parent / "yolo-human-parse.pt",
+                    Path(__file__).resolve().parent.parent / "models" / "yolo-human-parse.pt",
+                ]
+                for sp in search_paths:
+                    if sp.exists():
+                        model_p = sp
+                        break
+
+            try:
+                self.model = YOLO(str(model_p) if model_p.exists() else "yolo-human-parse.pt")
+            except Exception:
+                self.model = None
+
+    def reset(self) -> None:
+        """Reinicia el seguimiento y la memoria temporal del detector de Human Parse."""
+        self.tracking_active = False
+        self.prev_mask = None
+        self.hold_frames = 0
+        self.last_confidence = 0.0
+
+    def predict_mask(
+        self,
+        frame_bgr: np.ndarray,
+        hand_landmarks_list: Optional[List[Any]] = None,
+        arm_only: bool = True,
+        device: Optional[torch.device] = None
+    ) -> Tuple[torch.Tensor, bool]:
+        """
+        Ejecuta la inferencia de YOLO-Human-Parse aislando brazos, manos y prendas conectadas,
+        garantizando cero parpadeos mediante fusión espacial, histeresis y suavizado EMA.
+
+        Clases: 0:hair, 1:face, 2:neck, 3:arm, 4:hand, 5:back, 6:leg, 7:foot, 8:outfit, 9:person, 10:phone
+        """
+        target_device = device or self.device
+        h, w = frame_bgr.shape[:2]
+
+        if self.model is None:
+            return torch.zeros((1, 1, h, w), device=target_device), False
+
+        current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
+        target_classes = [3, 4, 8] if arm_only else [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+        try:
+            results = self.model.predict(
+                source=frame_bgr,
+                device=target_device,
+                imgsz=self.cfg.imgsz,
+                conf=current_conf,
+                classes=target_classes,
+                retina_masks=self.cfg.retina_masks,
+                iou=self.cfg.iou_threshold,
+                verbose=False
+            )
+        except Exception:
+            if self.hold_frames > 0 and self.prev_mask is not None:
+                self.hold_frames -= 1
+                decayed = self.prev_mask * self.decay_factor
+                self.prev_mask = decayed.clone()
+                return decayed, True
+            self.tracking_active = False
+            self.prev_mask = None
+            self.last_confidence = 0.0
+            return torch.zeros((1, 1, h, w), device=target_device), False
+
+        if not results or results[0].masks is None or len(results[0].masks.data) == 0:
+            if self.hold_frames > 0 and self.prev_mask is not None:
+                self.hold_frames -= 1
+                decayed = self.prev_mask * self.decay_factor
+                self.prev_mask = decayed.clone()
+                return decayed, True
+            self.tracking_active = False
+            self.prev_mask = None
+            self.last_confidence = 0.0
+            return torch.zeros((1, 1, h, w), device=target_device), False
+
+        if results[0].boxes is not None and len(results[0].boxes) > 0:
+            self.last_confidence = float(results[0].boxes.conf.mean().item())
+        else:
+            self.last_confidence = 0.0
+
+        masks_tensor = results[0].masks.data  # [N, H_out, W_out]
+        classes_tensor = results[0].boxes.cls if results[0].boxes is not None else None
+        num_instances = masks_tensor.shape[0]
+
+        valid_instances = []
+        masks_cpu = masks_tensor.detach().cpu().numpy()
+        max_h = masks_tensor.shape[1] - 1
+        max_w = masks_tensor.shape[2] - 1
+        total_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
+
+        for i in range(num_instances):
+            inst_area = float(masks_tensor[i].sum().item()) / total_pixels
+            if inst_area < 0.003:
+                continue
+
+            cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else 3
+
+            if not arm_only:
+                valid_instances.append(masks_tensor[i])
+                continue
+
+            # Para arm_only:
+            # Clases 3 (arm) y 4 (hand): partes anatómicas directas del brazo
+            if cls_id in (3, 4):
+                valid_instances.append(masks_tensor[i])
+                continue
+
+            # Clase 8 (outfit): solo si conecta con la mano/muñeca (manga del usuario)
+            if cls_id == 8:
+                touches_wrist = False
+                if hand_landmarks_list:
+                    for hl in hand_landmarks_list:
+                        for lm_idx in (0, 5, 9, 13, 17):
+                            lx = min(max_w, max(0, int(hl[lm_idx].x * max_w)))
+                            ly = min(max_h, max(0, int(hl[lm_idx].y * max_h)))
+                            y_min = max(0, ly - 6)
+                            y_max = min(max_h, ly + 6)
+                            x_min = max(0, lx - 6)
+                            x_max = min(max_w, lx + 6)
+                            if float(masks_cpu[i, y_min:y_max, x_min:x_max].max()) > 0.4:
+                                touches_wrist = True
+                                break
+                        if touches_wrist:
+                            break
+
+                if touches_wrist:
+                    valid_instances.append(masks_tensor[i])
+
+        if valid_instances:
+            stacked = torch.stack(valid_instances)
+            combined = torch.clamp(stacked.sum(dim=0, keepdim=True), 0.0, 1.0)
+            self.tracking_active = True
+        elif self.hold_frames > 0 and self.prev_mask is not None:
+            self.hold_frames -= 1
+            decayed = self.prev_mask * self.decay_factor
+            self.prev_mask = decayed.clone()
+            return decayed, True
+        else:
+            combined = torch.clamp(masks_tensor.sum(dim=0, keepdim=True), 0.0, 1.0)
+            self.tracking_active = True
+
+        best_mask = combined.float()
+        if best_mask.ndim == 3:
+            best_mask = best_mask.unsqueeze(0)
+
+        if best_mask.shape[-2:] != (h, w):
+            best_mask = F.interpolate(best_mask, size=(h, w), mode="bilinear", align_corners=False)
+
+        best_mask = torch.clamp(best_mask, 0.0, 1.0)
+
+        # Suavizado temporal EMA para estabilidad y fluidez sin parpadeos
+        if self.prev_mask is not None and self.prev_mask.shape == best_mask.shape:
+            best_mask = best_mask * self.ema_alpha + self.prev_mask * (1.0 - self.ema_alpha)
         self.prev_mask = best_mask.clone()
         self.hold_frames = self.max_hold_frames
 

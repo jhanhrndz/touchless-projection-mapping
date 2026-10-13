@@ -543,6 +543,9 @@
             <div class="stat-badge" id="latency-badge">
                 <span>Latencia: 0.0 ms</span>
             </div>
+            <div class="stat-badge" id="precision-badge" style="color: var(--accent-cyan);">
+                <span>Precisión: --%</span>
+            </div>
             <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);">
                 <span>GPU: Detectando...</span>
             </div>
@@ -554,6 +557,7 @@
                 <option value="rvm_resnet">2. RVM ResNet50 (CUDA - 30 FPS) [Alta Calidad]</option>
                 <option value="yolo">3. YOLO11-seg (CUDA - 45 FPS) [Cuerpo Completo]</option>
                 <option value="background_subtraction">4. Resta de Fondo (GPU/CPU - 60 FPS)</option>
+                <option value="yolo_human_parse">5. YOLO-Human-Parse (CUDA - 20 FPS) [Brazos y Partes]</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
@@ -664,6 +668,7 @@
         const camDot = document.getElementById('cam-dot');
         const fpsLabel = document.getElementById('fps-label');
         const latencyBadge = document.getElementById('latency-badge');
+        const precisionBadge = document.getElementById('precision-badge');
         const gpuBadge = document.getElementById('gpu-badge');
 
         const modelSelect = document.getElementById('model-select');
@@ -1141,6 +1146,11 @@
                     const st = await res.json();
                     fpsLabel.textContent = `${st.fps} FPS`;
                     latencyBadge.textContent = `Latencia: ${st.latency_ms} ms`;
+                    if (precisionBadge) {
+                        precisionBadge.textContent = (st.confidence !== null && st.confidence !== undefined)
+                            ? `Precisión: ${st.confidence}%`
+                            : 'Precisión: Determinista';
+                    }
                     gpuBadge.textContent = `GPU: ${st.device} (${st.vram_mb} MB)`;
                     guidedFilterActive = st.guided_filter;
                     gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.2)' : '';
