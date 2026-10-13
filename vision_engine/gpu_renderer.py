@@ -132,9 +132,9 @@ class GpuHologramRenderer:
         bgr_energy = torch.cat([channel_b, channel_g, channel_r], dim=1)
         final_bgr_tensor = torch.clamp(bgr_energy * sharp_alpha, 0.0, 1.0)
 
-        # 4. Transferir a host como array BGR uint8 listo para streaming y proyector
+        # 4. Transferir a host como array BGR uint8 C-contiguo listo para OpenCV y streaming
         #    Evita cv2.cvtColor(RGB2BGR) en CPU
-        bgr_cpu_np = (
+        bgr_cpu_np = np.ascontiguousarray(
             final_bgr_tensor.squeeze(0)
             .permute(1, 2, 0)
             .mul(255.0)

@@ -34,9 +34,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from vision_engine import cuda_engine
+from vision_engine.engine import VideoFileSource
 from vision_engine.config import DEFAULT_TASK_PATH
-from vision_engine.pipelines.yolo_pipeline import YoloArmDetector, FastSamArmDetector
+from vision_engine.pipelines.yolo_pipeline import YoloArmDetector, FastSamArmDetector, HAS_ULTRALYTICS
 from vision_engine.pipelines.rvm_background import RvmProcessor, BackgroundSubtractionProcessor
 from vision_engine.hand_tracker import HandInteractionTracker
 from vision_engine.gpu_renderer import GpuHologramRenderer
@@ -67,7 +67,7 @@ def run_benchmark_for_mode(
     is_cuda = device.type == "cuda"
     process = psutil.Process()
 
-    cap = cuda_engine.VideoFileSource(str(source_path))
+    cap = VideoFileSource(str(source_path))
 
     # Cargar modelos según el modo
     yolo_detector = None
@@ -75,10 +75,10 @@ def run_benchmark_for_mode(
     rvm_processor = None
     bg_processor = None
 
-    if "YOLO" in mode_name and cuda_engine.HAS_YOLO:
+    if "YOLO" in mode_name and HAS_ULTRALYTICS:
         yolo_detector = YoloArmDetector(device=device)
 
-    if "FastSAM" in mode_name and cuda_engine.HAS_FASTSAM:
+    if "FastSAM" in mode_name and HAS_ULTRALYTICS:
         fastsam_detector = FastSamArmDetector(device=device)
 
     if "RVM" in mode_name:
@@ -167,9 +167,6 @@ def run_benchmark_for_mode(
         if is_cuda:
             torch.cuda.synchronize(0)
         t_post_start = time.perf_counter()
-
-        # Aislamiento orgánico
-        active_alpha = cuda_engine.isolate_arm_and_hand_mask(active_alpha, h, w, hand_landmarks_list, device)
 
         # Shader holográfico BGR en GPU
         _, output_bgr = gpu_renderer.render(frame_tensor, active_alpha, apply_guided_filter=False)

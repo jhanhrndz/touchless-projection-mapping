@@ -11,7 +11,6 @@ import cv2
 import numpy as np
 import torch
 
-from vision_engine.arm_selector import ArmMaskSelector
 from vision_engine.config import EngineConfig, MODELS_DIR
 from vision_engine.gpu_renderer import GpuHologramRenderer
 from vision_engine.hand_tracker import HandInteractionTracker
@@ -106,26 +105,6 @@ class VideoFileSource:
         return self.cap.set(prop, val)
 
 
-_ARM_SELECTOR = ArmMaskSelector()
-
-
-def isolate_arm_and_hand_mask(
-    alpha_matte: torch.Tensor,
-    h: int,
-    w: int,
-    hand_landmarks_list: Optional[List[Any]],
-    device: torch.device,
-) -> torch.Tensor:
-    """Aísla manos y brazos eliminando torso y fondo orgánicamente."""
-    return _ARM_SELECTOR.select(
-        alpha_matte=alpha_matte,
-        h=h,
-        w=w,
-        hand_landmarks_list=hand_landmarks_list,
-        device=device,
-    )
-
-
 class VisionEngine:
     """Orquestador principal del pipeline de visión por computadora y proyección."""
 
@@ -176,17 +155,17 @@ class VisionEngine:
 
     def _resolve_backbone_name(self, model_key: str) -> str:
         k = model_key.lower()
-        if "fastsam" in k:
-            return "FastSAM Point-Prompt (CUDA - 58 FPS)"
-        elif "yolo" in k:
-            return "YOLO11-seg (CUDA - 59 FPS)"
-        elif "mobilenet" in k:
+        if "mobilenet" in k or ("rvm" in k and "resnet" not in k):
             return "RVM MobileNetV3 (CUDA - 35 FPS)"
         elif "resnet" in k:
             return "RVM ResNet50 (CUDA - 10 FPS)"
+        elif "fastsam" in k:
+            return "FastSAM Point-Prompt (CUDA - 30 FPS)"
+        elif "yolo" in k:
+            return "YOLO11-seg (CUDA - 40 FPS)"
         elif "background" in k or "fondo" in k or "resta" in k:
-            return "Resta de Fondo (GPU/CPU - 34 FPS)"
-        return "FastSAM Point-Prompt (CUDA - 58 FPS)"
+            return "Resta de Fondo (GPU/CPU - 45 FPS)"
+        return "RVM MobileNetV3 (CUDA - 35 FPS)"
 
     def run(
         self,
@@ -223,6 +202,8 @@ class VisionEngine:
         measured_fps = 0.0
         black_streak = 0
         active_mode = STATE.backbone_name
+        auto_calibrated = False
+        warmup_frames = 0
 
         try:
             while STATE.running:
@@ -245,6 +226,16 @@ class VisionEngine:
                 h, w = frame_bgr.shape[:2]
                 frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
+                warmup_frames += 1
+                # Auto-calibración inicial tras estabilizar exposición y balance de blancos (~22 fotogramas)
+                if warmup_frames >= 22 and not auto_calibrated:
+                    with STATE.lock:
+                        if STATE.bg_frame is None:
+                            STATE.bg_frame = frame_bgr.copy()
+                    self.bg_processor.calibrate(frame_bgr)
+                    auto_calibrated = True
+                    logger.info("Auto-calibración inicial de fondo completada exitosamente (fotograma %d).", warmup_frames)
+
                 # Comprobar solicitudes dinámicas de cambio de modelo o reseteo
                 with STATE.lock:
                     if STATE.requested_mode is not None:
@@ -252,12 +243,19 @@ class VisionEngine:
                         STATE.requested_mode = None
                         STATE.backbone_name = active_mode
                         self.rvm_processor.reset_recurrent_states()
-                        _ARM_SELECTOR.reset()
+                        self.yolo_detector.reset()
+                        self.fastsam_detector.reset()
                         self.hand_tracker.reset()
+                        if any(k in active_mode.lower() for k in ("background", "resta", "fondo")):
+                            if STATE.bg_frame is None and STATE.hands_count == 0:
+                                self.bg_processor.calibrate(frame_bgr)
+                                STATE.bg_frame = frame_bgr.copy()
+                                logger.info("Auto-calibración de fondo limpia ejecutada al conmutar a Modelo 5.")
                         logger.info("Motor de IA conmutado a: %s", active_mode)
                     if STATE.reset_requested:
                         self.rvm_processor.reset_recurrent_states()
-                        _ARM_SELECTOR.reset()
+                        self.yolo_detector.reset()
+                        self.fastsam_detector.reset()
                         self.hand_tracker.reset()
                         STATE.reset_requested = False
                         logger.info("Memoria temporal reiniciada.")
@@ -283,12 +281,18 @@ class VisionEngine:
                 # Tensor GPU normalizado
                 frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1).unsqueeze(0).to(self.device).float() / 255.0
 
-                # Inferencia según el modelo activo
+                # Inferencia desacoplada según el modelo activo (cuerpo completo nativo de alta velocidad)
                 mode_lower = active_mode.lower()
-                if "yolo" in mode_lower and self.yolo_detector.model is not None:
-                    active_alpha, _ = self.yolo_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
+                if "mobilenet" in mode_lower or ("rvm" in mode_lower and "resnet" not in mode_lower):
+                    active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="mobilenetv3", device=self.device)
+                elif "resnet" in mode_lower:
+                    active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="resnet50", device=self.device)
                 elif "fastsam" in mode_lower and self.fastsam_detector.model is not None:
-                    active_alpha, _ = self.fastsam_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
+                    active_alpha, _ = self.fastsam_detector.predict_mask(
+                        frame_bgr, hand_landmarks_list, device=self.device
+                    )
+                elif "yolo" in mode_lower and self.yolo_detector.model is not None:
+                    active_alpha, _ = self.yolo_detector.predict_mask(frame_bgr, hand_landmarks_list, device=self.device)
                 elif "background" in mode_lower or "resta" in mode_lower or "fondo" in mode_lower:
                     with STATE.lock:
                         if STATE.bg_frame is not None and not self.bg_processor.is_calibrated():
@@ -296,23 +300,23 @@ class VisionEngine:
                         elif STATE.bg_frame is not None and STATE.bg_frame is not self.bg_processor.bg_frame:
                             self.bg_processor.calibrate(STATE.bg_frame)
                         self.bg_processor.cfg.threshold = bg_thresh
-                    active_alpha, was_cal = self.bg_processor.compute_mask(frame_bgr, device=self.device)
-                    if not was_cal:
+
+                    # Auto-calibrar sobre la marcha si aún no se tiene fondo almacenado y no hay manos
+                    if not self.bg_processor.is_calibrated() and detected_hands == 0:
+                        self.bg_processor.calibrate(frame_bgr)
+                        with STATE.lock:
+                            STATE.bg_frame = frame_bgr.copy()
+
+                    active_alpha, was_cal = self.bg_processor.compute_mask(
+                        frame_bgr, device=self.device, has_hands=(detected_hands > 0)
+                    )
+                    # Sincronizar fondo si hubo calibración o auto-recalibración por movimiento de cámara
+                    if was_cal or getattr(self.bg_processor, "auto_recalibrated", False):
                         with STATE.lock:
                             if self.bg_processor.bg_frame is not None:
                                 STATE.bg_frame = self.bg_processor.bg_frame.copy()
                 else:
-                    variant = "resnet50" if "resnet" in mode_lower else "mobilenetv3"
-                    active_alpha = self.rvm_processor.predict_alpha(
-                        frame_tensor,
-                        variant=variant,
-                        has_hands=(detected_hands > 0),
-                        device=self.device,
-                    )
-
-                # Filtrar solo brazos si está activo
-                if arm_only:
-                    active_alpha = isolate_arm_and_hand_mask(active_alpha, h, w, hand_landmarks_list, self.device)
+                    active_alpha = self.rvm_processor.predict_alpha(frame_tensor, variant="mobilenetv3", device=self.device)
 
                 # Renderizar holograma verde en GPU
                 _, output_bgr = self.gpu_renderer.render(
@@ -320,6 +324,27 @@ class VisionEngine:
                     active_alpha=active_alpha,
                     apply_guided_filter=guided_filter_on,
                 )
+
+                if not output_bgr.flags['C_CONTIGUOUS']:
+                    output_bgr = np.ascontiguousarray(output_bgr)
+
+                # 1. Codificar fotograma limpio para el proyector de pared (CERO puntero, CERO artefactos visuales)
+                _, clean_jpeg = cv2.imencode(".jpg", output_bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
+
+                # 2. Superponer retícula del puntero EXCLUSIVAMENTE para la pantalla del controlador
+                #    Anclada físicamente en el mismo fotograma JPEG al dedo índice (cero deriva lateral)
+                if hand_landmarks_list:
+                    output_ctrl = output_bgr.copy()
+                    for hl in hand_landmarks_list:
+                        k_x = min(w - 1, max(0, int(hl[8].x * w)))
+                        k_y = min(h - 1, max(0, int(hl[8].y * h)))
+                        is_pinch = cur_info.get("is_pinching", False)
+                        ring_col = (0, 255, 255) if is_pinch else (255, 242, 0)
+                        cv2.circle(output_ctrl, (k_x, k_y), 11, ring_col, 2, cv2.LINE_AA)
+                        cv2.circle(output_ctrl, (k_x, k_y), 3, (255, 255, 255), -1, cv2.LINE_AA)
+                    _, ctrl_jpeg = cv2.imencode(".jpg", output_ctrl, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                else:
+                    ctrl_jpeg = clean_jpeg
 
                 # Medición de FPS y latencia
                 loop_time = (time.perf_counter() - loop_start) * 1000.0
@@ -333,11 +358,8 @@ class VisionEngine:
                     STATE.fps = measured_fps
                     STATE.latency_ms = loop_time
                     STATE.backbone_name = active_mode
-
-                # Guardar JPEG para el streaming
-                _, jpeg_buf = cv2.imencode(".jpg", output_bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                with STATE.lock:
-                    STATE.latest_jpeg = jpeg_buf.tobytes()
+                    STATE.latest_jpeg = clean_jpeg.tobytes()
+                    STATE.latest_controller_jpeg = ctrl_jpeg.tobytes()
 
                 if show_gui:
                     cv2.imshow(window_name, output_bgr)

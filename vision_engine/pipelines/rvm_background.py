@@ -31,8 +31,8 @@ class RvmConfig:
     """Parámetros de configuración del motor Robust Video Matting."""
     dsr_mobilenet: float = 0.50
     dsr_resnet: float = 0.40
-    hand_alpha_boost: float = 1.35
-    black_floor: float = 0.05
+    hand_alpha_boost: float = 2.20
+    black_floor: float = 0.03
     white_ceiling: float = 0.85
 
 
@@ -43,7 +43,9 @@ class RvmProcessor:
         self.cfg = config or RvmConfig()
         self.device = device or torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.models: Dict[str, Any] = {}
-        self.rec: List[Optional[torch.Tensor]] = [None] * 4
+        self.rec_mobilenet: List[Optional[torch.Tensor]] = [None] * 4
+        self.rec_resnet: List[Optional[torch.Tensor]] = [None] * 4
+        self.rec = self.rec_mobilenet
 
         # Cargar repositorios y pesos desde caché local del proyecto o del sistema
         from vision_engine.config import TORCH_HUB_DIR
@@ -67,9 +69,13 @@ class RvmProcessor:
         except Exception:
             pass
 
-    def reset_recurrent_states(self) -> None:
-        """Reinicia los tensores de memoria temporal recurrente (r1i, r2i, r3i, r4i)."""
-        self.rec = [None] * 4
+    def reset_recurrent_states(self, variant: Optional[str] = None) -> None:
+        """Reinicia los tensores de memoria temporal recurrente de manera desacoplada."""
+        if variant is None or "mobilenet" in variant.lower():
+            self.rec_mobilenet = [None] * 4
+        if variant is None or "resnet" in variant.lower():
+            self.rec_resnet = [None] * 4
+        self.rec = self.rec_mobilenet
 
     def predict_alpha(
         self,
@@ -92,20 +98,35 @@ class RvmProcessor:
         if model is None:
             return torch.zeros((1, 1, h, w), device=target_device)
 
+        rec_states = self.rec_resnet if key == "resnet50" else self.rec_mobilenet
         dsr = self.cfg.dsr_resnet if key == "resnet50" else self.cfg.dsr_mobilenet
-        is_cuda = target_device.type == "cuda"
 
-        with torch.no_grad(), torch.amp.autocast("cuda" if is_cuda else "cpu"):
-            fgr, pha, *self.rec = model(frame_tensor, *self.rec, downsample_ratio=dsr)
+        try:
+            with torch.no_grad():
+                fgr, pha, *new_rec = model(frame_tensor, *rec_states, downsample_ratio=dsr)
+                if key == "resnet50":
+                    self.rec_resnet = new_rec
+                else:
+                    self.rec_mobilenet = new_rec
+        except Exception:
+            self.reset_recurrent_states(key)
+            try:
+                rec_states = self.rec_resnet if key == "resnet50" else self.rec_mobilenet
+                with torch.no_grad():
+                    fgr, pha, *new_rec = model(frame_tensor, *rec_states, downsample_ratio=dsr)
+                    if key == "resnet50":
+                        self.rec_resnet = new_rec
+                    else:
+                        self.rec_mobilenet = new_rec
+            except Exception:
+                return torch.zeros((1, 1, h, w), device=target_device)
 
-        # Realce adaptativo de contraste para manos sin rostro
-        if has_hands:
-            # Curva suave: suprime sombras por debajo del black floor y satura la piel
-            pha_clean = torch.where(pha < self.cfg.black_floor, torch.zeros_like(pha), pha)
-            norm = torch.clamp((pha_clean - self.cfg.black_floor) / (self.cfg.white_ceiling - self.cfg.black_floor), 0.0, 1.0)
-            pha = norm * norm * (3.0 - 2.0 * norm)
-        else:
-            pha = torch.where(pha < self.cfg.black_floor, torch.zeros_like(pha), pha)
+        # Garantizar inmunidad frente a NaNs
+        pha = torch.nan_to_num(pha, nan=0.0)
+
+        # Realce adaptativo no-lineal con curva gamma para visibilidad nítida de extremidades
+        pha = torch.where(pha < self.cfg.black_floor, torch.zeros_like(pha), pha)
+        pha = torch.clamp(torch.pow(pha, 0.75) * self.cfg.hand_alpha_boost, 0.0, 1.0)
 
         return pha
 
@@ -128,17 +149,28 @@ class BackgroundSubtractionProcessor:
             cv2.MORPH_ELLIPSE,
             (self.cfg.morph_kernel_size, self.cfg.morph_kernel_size)
         )
+        self.last_raw_frame: Optional[np.ndarray] = None
+        self.stable_diff_counter: int = 0
+        self.auto_recalibrated: bool = False
 
     def calibrate(self, frame_bgr: np.ndarray) -> None:
         """Almacena el fotograma de referencia estático para calibración."""
         if frame_bgr is not None and frame_bgr.size > 0:
             self.bg_frame = frame_bgr.copy()
+            self.last_raw_frame = frame_bgr.copy()
+            self.stable_diff_counter = 0
+            self.auto_recalibrated = False
 
     def is_calibrated(self) -> bool:
         """Indica si el fondo ha sido calibrado."""
         return self.bg_frame is not None
 
-    def compute_mask(self, frame_bgr: np.ndarray, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, bool]:
+    def compute_mask(
+        self,
+        frame_bgr: np.ndarray,
+        device: Optional[torch.device] = None,
+        has_hands: bool = False,
+    ) -> Tuple[torch.Tensor, bool]:
         """
         Calcula la máscara diferencial limpia sin deformaciones circulares ni poligonales.
 
@@ -153,22 +185,75 @@ class BackgroundSubtractionProcessor:
             self.calibrate(frame_bgr)
             return torch.zeros((1, 1, h, w), device=target_device), False
 
-        # 1. Diferencia absoluta
-        diff = cv2.absdiff(frame_bgr, self.bg_frame)
+        # 1. Diferencia multicanal BGR (máximo de canales) para máxima sensibilidad cromática
+        diff_bgr = cv2.absdiff(frame_bgr, self.bg_frame)
+        max_channel_diff = np.max(diff_bgr, axis=2)
 
-        # 2. Convertir a escala de grises
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        # 2. Diferencia en espacio de color YCrCb para detectar crominancia pura (tono de piel / ropa)
+        frame_ycrcb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2YCrCb)
+        bg_ycrcb = cv2.cvtColor(self.bg_frame, cv2.COLOR_BGR2YCrCb)
+        diff_ycrcb = cv2.absdiff(frame_ycrcb, bg_ycrcb)
+        chroma_diff = np.maximum(diff_ycrcb[:, :, 1], diff_ycrcb[:, :, 2])
+
+        # Combinar máxima diferencia de luminancia y crominancia
+        combined_diff = np.maximum(max_channel_diff, chroma_diff)
 
         # 3. Filtrado espacial suave para eliminar ruido electrónico del sensor
-        blurred = cv2.GaussianBlur(gray_diff, (self.cfg.blur_ksize, self.cfg.blur_ksize), 0)
+        blurred = cv2.GaussianBlur(combined_diff, (self.cfg.blur_ksize, self.cfg.blur_ksize), 0)
 
         # 4. Umbralización binaria
         _, thresh = cv2.threshold(blurred, self.cfg.threshold, 255, cv2.THRESH_BINARY)
 
-        # 5. Apertura morfológica mínima (elimina píxeles aislados SIN agrandar ni redondear dedos)
-        clean_mask = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, self._kernel)
+        # 5. Cierre morfológico (MORPH_CLOSE) para sellar puentes y agujeros
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        thresh_closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_close)
 
-        # 6. Convertir a tensor normalizado en el dispositivo objetivo
+        # 6. Relleno morfológico exacto de huecos interiores (Flood-Fill con borde seguro)
+        #    Sella huecos interiores causados por objetos estáticos ocluidos sin alterar
+        #    los contornos externos naturales. Añade un borde negro perimetral de 1px
+        #    para garantizar inmunidad total contra ruido de sensor en los bordes.
+        h_mask, w_mask = thresh_closed.shape
+        padded = cv2.copyMakeBorder(thresh_closed, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+        cv_pad = np.zeros((h_mask + 4, w_mask + 4), dtype=np.uint8)
+        cv2.floodFill(padded, cv_pad, (0, 0), 255)
+        holes_padded = cv2.bitwise_not(padded)
+        holes = holes_padded[1:-1, 1:-1]
+        solid_mask = thresh_closed | holes
+
+        # 7. Apertura morfológica mínima para limpiar ruido de alta frecuencia en el fondo
+        clean_mask = cv2.morphologyEx(solid_mask, cv2.MORPH_OPEN, self._kernel)
+
+        # 8. Auto-recalibración inteligente ante movimiento o reorientación de la cámara:
+        #    A) Mide el movimiento inter-fotogramas para saber si la cámara aún se está moviendo o ya se estabilizó.
+        #    B) CONDICIÓN CRÍTICA DE MANOS: Si hay manos del usuario visibles en el encuadre (has_hands=True),
+        #       la auto-recalibración se bloquea de inmediato (stable_diff_counter = 0). Esto garantiza que NUNCA
+        #       se capture la mano como fondo de referencia, evitando siluetas o manchas verdes fantasma al moverla.
+        #    C) Cuando NO hay manos (has_hands=False) y la escena presenta una alteración persistente (> 20% del encuadre)
+        #       con la cámara en reposo (inter_frame_motion < 2.8) durante 30 fotogramas continuos (~1s):
+        #       se captura automáticamente el nuevo fondo limpio y se devuelve una máscara en cero absoluto.
+        total_pixels = h * w
+        active_ratio = np.count_nonzero(clean_mask) / float(total_pixels)
+        self.auto_recalibrated = False
+
+        inter_frame_motion = 0.0
+        if self.last_raw_frame is not None and self.last_raw_frame.shape == frame_bgr.shape:
+            inter_frame_motion = float(cv2.absdiff(frame_bgr, self.last_raw_frame).mean())
+        self.last_raw_frame = frame_bgr.copy()
+
+        if has_hands:
+            # Manos presentes en cámara: bloquear completamente la auto-calibración sobre la extremidad
+            self.stable_diff_counter = 0
+        elif (active_ratio > 0.20 and inter_frame_motion < 2.8) or (active_ratio > 0.60):
+            self.stable_diff_counter += 1
+            if self.stable_diff_counter >= 30:
+                self.calibrate(frame_bgr)
+                self.auto_recalibrated = True
+                self.stable_diff_counter = 0
+                return torch.zeros((1, 1, h, w), device=target_device), True
+        else:
+            self.stable_diff_counter = 0
+
+        # 9. Convertir a tensor normalizado en el dispositivo objetivo
         mask_tensor = torch.from_numpy(clean_mask).to(target_device).float().unsqueeze(0).unsqueeze(0) / 255.0
 
         return mask_tensor, True

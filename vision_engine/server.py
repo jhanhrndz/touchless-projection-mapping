@@ -31,6 +31,7 @@ class EngineState:
     def __init__(self) -> None:
         self.lock = threading.RLock()
         self.latest_jpeg: Optional[bytes] = None
+        self.latest_controller_jpeg: Optional[bytes] = None
         self.latest_raw_jpeg: Optional[bytes] = None
         self.latest_raw_bgr = None
         self.fps: float = 0.0
@@ -39,7 +40,7 @@ class EngineState:
         self.requested_mode: Optional[str] = None
         self.reset_requested: bool = False
         self.guided_filter_on: bool = False
-        self.arm_only: bool = True
+        self.arm_only: bool = False
         self.bg_frame = None
         self.bg_threshold: int = 35
         self.hands_count: int = 0
@@ -112,16 +113,32 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(FRONTEND_DIR), **kwargs)
 
-    def do_GET(self) -> None:
-        # Redirigir raíz a controller.html o index.html
+    def do_HEAD(self) -> None:
         if self.path in ["/", "/index.html"]:
-            ctrl_path = FRONTEND_DIR / "controller.html"
-            target = "/controller.html" if ctrl_path.exists() else "/index.html"
-            if self.path != target:
-                self.send_response(302)
-                self.send_header("Location", target)
-                self.end_headers()
-                return
+            self.send_response(302)
+            self.send_header("Location", "/controller.html")
+            self.end_headers()
+            return
+        if self.path == "/projection.html":
+            self.send_response(302)
+            self.send_header("Location", "/projector.html")
+            self.end_headers()
+            return
+        super().do_HEAD()
+
+    def do_GET(self) -> None:
+        # Redirigir URLs heredadas a las vistas canónicas activas
+        if self.path in ["/", "/index.html"]:
+            self.send_response(302)
+            self.send_header("Location", "/controller.html")
+            self.end_headers()
+            return
+
+        if self.path == "/projection.html":
+            self.send_response(302)
+            self.send_header("Location", "/projector.html")
+            self.end_headers()
+            return
 
         # 1. API de objetos
         if self.path == "/api/objects":
@@ -199,8 +216,9 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                 time.sleep(0.016)
             return
 
-        # 5. Stream de video MJPEG
+        # 5. Stream de video MJPEG (/stream para proyector limpio, /stream?controller=1 para panel de control)
         if self.path.startswith("/stream"):
+            is_controller = "controller" in self.path
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -210,7 +228,10 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
 
             while STATE.running:
                 with STATE.lock:
-                    frame = STATE.latest_jpeg
+                    if is_controller and STATE.latest_controller_jpeg is not None:
+                        frame = STATE.latest_controller_jpeg
+                    else:
+                        frame = STATE.latest_jpeg
                 if frame is not None:
                     try:
                         self.wfile.write(b"--frame\r\n")
@@ -248,6 +269,10 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
             length = 0
 
         if length > self.MAX_POST_BODY_BYTES:
+            try:
+                self.rfile.read(min(length, 1024 * 1024))
+            except Exception:
+                pass
             self.send_response(413)
             self.send_header("Content-Type", "application/json")
             self.send_header("Connection", "close")

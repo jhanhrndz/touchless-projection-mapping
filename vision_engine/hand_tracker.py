@@ -204,9 +204,9 @@ class HandTrackerConfig:
     """Parámetros de configuración del rastreador de manos."""
     target_width: float = 1920.0
     target_height: float = 1080.0
-    min_detection_confidence: float = 0.15
-    min_presence_confidence: float = 0.15
-    min_tracking_confidence: float = 0.15
+    min_detection_confidence: float = 0.50
+    min_presence_confidence: float = 0.50
+    min_tracking_confidence: float = 0.50
     filter_min_cutoff: float = 1.2
     filter_beta: float = 0.008
     pinch_down_px: float = 58.0
@@ -297,14 +297,34 @@ class HandInteractionTracker:
                     mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
                     res = self.detector.detect_for_video(mp_img, ts_ms)
                     if res and res.hand_landmarks:
-                        landmarks_list = res.hand_landmarks
+                        valid_hands = []
+                        for i, hl in enumerate(res.hand_landmarks):
+                            # Validar score de clasificación anatómica de mano
+                            if res.handedness and i < len(res.handedness) and len(res.handedness[i]) > 0:
+                                score = res.handedness[i][0].score
+                                if score < 0.45:
+                                    continue
+
+                            # Validación geométrica estricta de la mano para rechazar caras/orejas
+                            dist_palm = math.hypot(hl[0].x - hl[9].x, hl[0].y - hl[9].y)
+                            if dist_palm < 0.025:  # Clúster menor a 2.5% de pantalla es falso positivo
+                                continue
+
+                            # El dedo índice debe proyectarse coherentemente desde la muñeca
+                            dist_wrist_index = math.hypot(hl[0].x - hl[8].x, hl[0].y - hl[8].y)
+                            if dist_wrist_index < dist_palm * 0.70:
+                                continue
+
+                            valid_hands.append(hl)
+                        landmarks_list = valid_hands
                 except Exception:
                     pass
 
         # 2. Extraer y filtrar cursor de índice y pellizco
         if landmarks_list:
             hl = landmarks_list[0]
-            # Índice (punto 8)
+            # Landmark 8 es directamente la punta anatómica del dedo índice (INDEX_FINGER_TIP)
+            # No aplicar distorsión direccional distal para evitar deriva horizontal proporcional al orientar la mano
             raw_x = hl[8].x * self.cfg.target_width
             raw_y = hl[8].y * self.cfg.target_height
 

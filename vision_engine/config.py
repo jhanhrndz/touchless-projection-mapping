@@ -25,11 +25,11 @@ OBJECTS_PATH = FRONTEND_DIR / "objects.json" if (FRONTEND_DIR / "objects.json").
 class EngineConfig:
     """Configuración tipada del motor de visión sin números mágicos."""
     # Selección de modelo
-    default_model: str = "fastsam"  # 'fastsam', 'yolo', 'rvm_mobilenet', 'rvm_resnet', 'background_subtraction'
-    arm_only: bool = True           # Aislar estrictamente brazos y manos
-    guided_filter: bool = False     # Filtro guiado rápido en GPU
-    gf_radius: int = 4              # Radio de ventana del filtro guiado
-    gf_eps: float = 1e-2            # Regularización épsilon
+    default_model: str = "rvm_mobilenet"  # RVM MobileNetV3 por defecto (óptimo para cuerpo completo)
+    arm_only: bool = False                # Segmentación nativa de cuerpo completo
+    guided_filter: bool = False           # Filtro guiado rápido en GPU
+    gf_radius: int = 4                    # Radio de ventana del filtro guiado
+    gf_eps: float = 1e-2                  # Regularización épsilon
 
     # Parámetros YOLO
     yolo_conf: float = 0.18
@@ -51,9 +51,9 @@ class EngineConfig:
 
     # MediaPipe Hand Tracker
     hand_landmarker_path: Path = DEFAULT_TASK_PATH
-    mp_min_detection_conf: float = 0.15
-    mp_min_presence_conf: float = 0.15
-    mp_min_tracking_conf: float = 0.15
+    mp_min_detection_conf: float = 0.50
+    mp_min_presence_conf: float = 0.50
+    mp_min_tracking_conf: float = 0.50
 
     # Servidor HTTP y Red
     host: str = "0.0.0.0"

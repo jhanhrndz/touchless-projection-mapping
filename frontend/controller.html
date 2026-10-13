@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Centro de Control - Proyección Interactiva Touchless</title>
-    <!-- MediaPipe Hands & ONNX Runtime Web para Modos Web Fallback -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.js" crossorigin="anonymous"></script>
+
 
     <style>
         :root {
@@ -150,7 +147,7 @@
             box-shadow: 0 0 14px rgba(0, 242, 254, 0.5);
         }
 
-        button.btn {
+        .btn {
             background: #192236;
             color: var(--text-main);
             border: 1px solid var(--border-color);
@@ -159,32 +156,88 @@
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            gap: 6px;
+            text-decoration: none;
+            box-sizing: border-box;
+            line-height: 1.2;
             transition: all 0.2s;
+            user-select: none;
         }
-        button.btn:hover {
+        .btn:hover {
             background: #232f4a;
             border-color: var(--accent-cyan);
             color: #fff;
             transform: translateY(-1px);
         }
-        button.btn.primary {
+        .btn.micro {
+            padding: 3px 6px;
+            font-size: 10px;
+            font-family: monospace;
+            flex: 1;
+            justify-content: center;
+            background: #111722;
+        }
+        .btn.primary {
             background: linear-gradient(135deg, #0088cc, #00d2ff);
             color: #000;
             border: none;
             font-weight: 700;
             box-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
         }
-        button.btn.primary:hover {
+        .btn.primary:hover {
             background: linear-gradient(135deg, #0099e6, #33dcff);
             box-shadow: 0 0 16px rgba(0, 210, 255, 0.7);
         }
-        button.btn:disabled {
+        .btn:disabled, .btn[disabled] {
             opacity: 0.45;
             cursor: not-allowed;
             pointer-events: none;
+        }
+
+        /* Estilos específicos para enlaces de gestión del Backend */
+        .btn-backend-header {
+            background: rgba(0, 242, 254, 0.12);
+            border: 1px solid rgba(0, 242, 254, 0.45);
+            color: var(--accent-cyan);
+            font-weight: 700;
+            box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+        }
+        .btn-backend-header:hover {
+            background: rgba(0, 242, 254, 0.26);
+            border-color: #00f2fe;
+            color: #fff;
+            box-shadow: 0 0 14px rgba(0, 242, 254, 0.55);
+            transform: translateY(-1px);
+        }
+
+        .btn-backend-popover {
+            background: #142035;
+            border: 1px solid #293b5a;
+            color: #c0d4f5;
+            padding: 7px 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .btn-backend-popover:hover {
+            background: #1c2d4a;
+            border-color: var(--accent-cyan);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
+            transform: translateY(-1px);
+        }
+        .btn-backend-popover.highlight {
+            background: rgba(0, 242, 254, 0.15);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-weight: 700;
+        }
+        .btn-backend-popover.highlight:hover {
+            background: rgba(0, 242, 254, 0.30);
+            color: #fff;
+            box-shadow: 0 0 14px rgba(0, 242, 254, 0.6);
         }
 
         /* ── MENÚ DESPLEGABLE DE AJUSTES Y VIDEO DE FONDO ── */
@@ -369,17 +422,6 @@
             display: block;
         }
 
-        /* Canvas para modo Web Fallback */
-        #web-worker-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-            mix-blend-mode: screen;
-            display: none;
-        }
 
         /* Capa SVG para figuras interactivas de objects.json */
         svg#svg-layer {
@@ -421,42 +463,10 @@
             text-shadow: 0 0 8px rgba(0,0,0,0.9);
         }
 
-        /* Puntero reticular del dedo índice */
+        /* Puntero reticular del dedo índice (sincronizado al 100% en el stream de video) */
         #cursor {
-            position: absolute;
-            width: 28px;
-            height: 28px;
-            border: 2px solid #ffffff;
-            border-radius: 50%;
-            background: rgba(0, 242, 254, 0.85);
-            box-shadow: 0 0 18px var(--accent-cyan);
-            transform: translate(-50%, -50%);
-            z-index: 10;
+            display: none !important;
             pointer-events: none;
-            display: none;
-            transition: background 0.1s, border-color 0.1s, transform 0.08s, box-shadow 0.1s;
-        }
-        #cursor::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 6px;
-            height: 6px;
-            background: #ffffff;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-        }
-        #cursor.hovered {
-            background: rgba(0, 255, 136, 0.9);
-            box-shadow: 0 0 22px var(--accent-green);
-            transform: translate(-50%, -50%) scale(1.25);
-        }
-        #cursor.pinching {
-            background: #ffffff;
-            border-color: var(--accent-yellow);
-            box-shadow: 0 0 28px #ffffff;
-            transform: translate(-50%, -50%) scale(0.7);
         }
 
         /* Consola de diagnóstico */
@@ -538,21 +548,18 @@
             </div>
         </div>
 
-        <div class="controls-group">
             <!-- SELECTOR DINÁMICO DE MODELOS -->
             <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
-                <option value="fastsam">1. FastSAM Point-Prompt (CUDA - 33 FPS) [Recomendado]</option>
-                <option value="yolo">2. YOLO11-seg (CUDA - 37 FPS)</option>
-                <option value="rvm_mobilenet">3. RVM MobileNetV3 (CUDA - 34 FPS)</option>
-                <option value="rvm_resnet">4. RVM ResNet50 (CUDA - 28 FPS)</option>
-                <option value="background_subtraction">5. Resta de Fondo (GPU/CPU - 34 FPS)</option>
-                <option value="web_bg_sub">6. Resta de Fondo Web (Navegador - Canvas Fallback)</option>
-                <option value="web_pose">7. MediaPipe Pose (Navegador Fallback v3)</option>
-                <option value="web_rvm">8. RVM ONNX (Navegador Fallback v4)</option>
+                <option value="rvm_mobilenet">1. RVM MobileNetV3 (CUDA - 35 FPS) [Recomendado]</option>
+                <option value="fastsam">2. FastSAM Point-Prompt (CUDA - 30 FPS)</option>
+                <option value="yolo">3. YOLO11-seg (CUDA - 40 FPS)</option>
+                <option value="rvm_resnet">4. RVM ResNet50 (CUDA - 12 FPS)</option>
+                <option value="background_subtraction">5. Resta de Fondo (GPU/CPU - 45 FPS)</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
             <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Abrir Proyector</button>
+            <a id="header-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-header" title="Abrir Editor de Figuras del Backend (puerto 8000)">✏️ Editar Figuras</a>
 
             <!-- MENÚ DESPLEGABLE DE AJUSTES Y VIDEO -->
             <div class="dropdown-wrapper">
@@ -580,42 +587,32 @@
                         </div>
                     </div>
 
-                    <!-- SECCIÓN 2: FILTROS ANATÓMICOS E IA -->
+                    <!-- SECCIÓN 2: CALIDAD DE RENDERIZADO Y BORDES -->
                     <div class="popover-section">
                         <div class="section-title">
-                            <span>🦾 Filtros Anatómicos e IA</span>
+                            <span>✨ Calidad de Renderizado y Bordes</span>
                         </div>
                         <div class="section-row">
-                            <button id="arm-only-btn" class="btn" style="flex: 1; background: rgba(0, 255, 136, 0.15); border-color: var(--accent-green); color: var(--accent-green);" title="Aislar exclusivamente manos y brazos (Cero cuerpo / Cero cara)">🦾 Solo Brazos: ON</button>
-                            <button id="gf-toggle-btn" class="btn" style="flex: 1;" title="Alternar Fast Guided Filter (Tecla G)">✨ Guided Filter</button>
+                            <button id="gf-toggle-btn" class="btn" style="flex: 1;" title="Alternar Fast Guided Filter para suavizado fino de bordes (Tecla G)">✨ Guided Filter (Suavizado)</button>
                         </div>
                     </div>
 
-                    <!-- SECCIÓN 3: CALIBRACIÓN DEL PUNTERO -->
+                    <!-- SECCIÓN 3: GESTIÓN DE FIGURAS Y BACKEND -->
                     <div class="popover-section">
                         <div class="section-title">
-                            <span>🎯 Calibración de Puntero</span>
-                            <button id="reset-offset-btn" class="btn" style="padding: 2px 6px; font-size: 10px;">↺ Centrar</button>
+                            <span>📦 Figuras Interactivas (Backend)</span>
+                            <span class="badge-tag" style="color: var(--accent-cyan); border-color: rgba(0, 242, 254, 0.35);">Puerto 8000</span>
                         </div>
-                        <div class="slider-row" title="Compensar desplazamiento horizontal del puntero respecto al dedo índice">
-                            <span>Offset X:</span>
-                            <input type="range" id="cursor-offset-x" min="-60" max="60" value="-20">
-                            <span id="offset-x-val" class="slider-val">-20px</span>
-                        </div>
-                        <div class="slider-row" title="Compensar desplazamiento vertical del puntero respecto al dedo índice">
-                            <span>Offset Y:</span>
-                            <input type="range" id="cursor-offset-y" min="-60" max="60" value="-10">
-                            <span id="offset-y-val" class="slider-val">-10px</span>
-                        </div>
-                    </div>
-
-                    <!-- SECCIÓN 4: ESCENA Y ATAJOS -->
-                    <div class="popover-section">
-                        <div class="section-title">
-                            <span>📦 Escena Interactiva</span>
+                        <div class="section-row" style="gap: 8px; margin-bottom: 6px;">
+                            <a id="popover-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-popover highlight" style="flex: 1;" title="Abrir editor de figuras y mapeo de dispositivos">
+                                ✏️ Editor (8000)
+                            </a>
+                            <a id="popover-proj-editor-link" href="http://localhost:8000/editor/projection" target="_blank" class="btn btn-backend-popover" style="flex: 1;" title="Abrir vista de proyección 1:1 del editor">
+                                📐 Vista Proyección
+                            </a>
                         </div>
                         <div class="section-row">
-                            <button id="reload-obj-btn" class="btn" style="width: 100%;" title="Recargar figuras interactivas desde objects.json">📦 Recargar Figuras (objects.json)</button>
+                            <button id="reload-obj-btn" class="btn" style="width: 100%;" title="Recargar figuras interactivas desde objects.json">🔄 Recargar Figuras en Escena</button>
                         </div>
                         <div class="keyboard-shortcuts">
                             <b>Atajos:</b> [Espacio/C] Calibrar Fondo · [B] Siguiente IA · [G] Guided Filter · [V] Video
@@ -631,10 +628,8 @@
         <div id="viewport-container">
             <!-- Video de fondo reflejado en el controlador -->
             <video id="ctrl-bg-video" autoplay loop muted playsinline></video>
-            <!-- Stream en vivo procesado por el Motor CUDA -->
-            <img id="stream-view" src="/stream" alt="Iniciando stream CUDA..." />
-            <!-- Canvas de renderizado para modos Web Fallback -->
-            <canvas id="web-worker-canvas" width="1920" height="1080"></canvas>
+            <!-- Stream en vivo procesado por el Motor CUDA con retícula integrada -->
+            <img id="stream-view" src="/stream?controller=1" alt="Iniciando stream CUDA..." />
             <!-- Capa SVG para las figuras interactivas -->
             <svg id="svg-layer" viewBox="0 0 1920 1080"></svg>
             <!-- Cursor / Retícula holográfica en la punta del dedo índice -->
@@ -657,8 +652,6 @@
         const viewport = document.getElementById('viewport-container');
         const ctrlBgVideo = document.getElementById('ctrl-bg-video');
         const streamView = document.getElementById('stream-view');
-        const webCanvas = document.getElementById('web-worker-canvas');
-        const webCtx = webCanvas.getContext('2d');
         const svgLayer = document.getElementById('svg-layer');
         const cursorEl = document.getElementById('cursor');
         const pinchAlert = document.getElementById('pinch-alert');
@@ -676,7 +669,6 @@
 
         const modelSelect = document.getElementById('model-select');
         const calibrateBtn = document.getElementById('calibrate-btn');
-        const armOnlyBtn = document.getElementById('arm-only-btn');
         const gfToggleBtn = document.getElementById('gf-toggle-btn');
         const openProjBtn = document.getElementById('open-proj-btn');
         const reloadObjBtn = document.getElementById('reload-obj-btn');
@@ -684,47 +676,10 @@
         // Menú Desplegable de Ajustes
         const settingsMenuBtn = document.getElementById('settings-menu-btn');
         const settingsPopover = document.getElementById('settings-popover');
-        const cursorOffsetXInput = document.getElementById('cursor-offset-x');
-        const cursorOffsetYInput = document.getElementById('cursor-offset-y');
-        const offsetXVal = document.getElementById('offset-x-val');
-        const offsetYVal = document.getElementById('offset-y-val');
-        const resetOffsetBtn = document.getElementById('reset-offset-btn');
-
-        // Estado de Calibración de Puntero (Offset guardado en localStorage)
-        let cursorOffsetX = parseInt(localStorage.getItem('cursor_offset_x') || '-20', 10);
-        let cursorOffsetY = parseInt(localStorage.getItem('cursor_offset_y') || '-10', 10);
-        if (cursorOffsetXInput) cursorOffsetXInput.value = cursorOffsetX;
-        if (cursorOffsetYInput) cursorOffsetYInput.value = cursorOffsetY;
-        if (offsetXVal) offsetXVal.textContent = cursorOffsetX + 'px';
-        if (offsetYVal) offsetYVal.textContent = cursorOffsetY + 'px';
-
-        if (cursorOffsetXInput) {
-            cursorOffsetXInput.oninput = (e) => {
-                cursorOffsetX = parseInt(e.target.value, 10);
-                if (offsetXVal) offsetXVal.textContent = cursorOffsetX + 'px';
-                localStorage.setItem('cursor_offset_x', cursorOffsetX);
-            };
-        }
-        if (cursorOffsetYInput) {
-            cursorOffsetYInput.oninput = (e) => {
-                cursorOffsetY = parseInt(e.target.value, 10);
-                if (offsetYVal) offsetYVal.textContent = cursorOffsetY + 'px';
-                localStorage.setItem('cursor_offset_y', cursorOffsetY);
-            };
-        }
-        if (resetOffsetBtn) {
-            resetOffsetBtn.onclick = () => {
-                cursorOffsetX = 0;
-                cursorOffsetY = 0;
-                if (cursorOffsetXInput) cursorOffsetXInput.value = 0;
-                if (cursorOffsetYInput) cursorOffsetYInput.value = 0;
-                if (offsetXVal) offsetXVal.textContent = '0px';
-                if (offsetYVal) offsetYVal.textContent = '0px';
-                localStorage.setItem('cursor_offset_x', 0);
-                localStorage.setItem('cursor_offset_y', 0);
-                showToast('Offset de puntero centrado');
-            };
-        }
+        // Limpiar cualquier offset residual para garantizar anclaje puro al dedo
+        localStorage.removeItem('cursor_scale_x');
+        localStorage.removeItem('cursor_offset_x');
+        localStorage.removeItem('cursor_offset_y');
 
         // Abrir y cerrar menú de ajustes de proyección
         if (settingsMenuBtn && settingsPopover) {
@@ -755,8 +710,6 @@
         const primaryChannel = new BroadcastChannel('hand_projection_channel');
         const legacyChannel = new BroadcastChannel('digital_arm_channel');
 
-        let isWebMode = false;
-        let armOnlyActive = true;
         let guidedFilterActive = false;
         let polygons = [];
         let currentHoveredId = null;
@@ -825,8 +778,7 @@
             // Sincronizar modo de visualización activo
             const modeMsg = {
                 type: 'mode_change',
-                model: modelSelect.value,
-                isWeb: isWebMode
+                model: modelSelect.value
             };
             primaryChannel.postMessage(modeMsg);
             legacyChannel.postMessage(modeMsg);
@@ -845,40 +797,100 @@
         };
 
         // ─────────────────────────────────────────────────────────────────────
-        //  2. CONTROLES DE VIDEO DE FONDO (PRESERVADO Y MEJORADO)
+        //  2. CONTROLES Y PERSISTENCIA DE VIDEO DE FONDO (INDEXEDDB)
         // ─────────────────────────────────────────────────────────────────────
-        loadVideoBtn.onclick = () => bgVideoInput.click();
+        const DB_NAME = 'TouchlessProjectionDB';
+        const DB_STORE = 'bg_video_store';
 
-        bgVideoInput.onchange = (e) => {
-            const file = e.target.files && e.target.files[0];
-            if (!file) return;
+        function openVideoDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(DB_STORE)) {
+                        db.createObjectStore(DB_STORE);
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
 
-            currentBgVideoFile = file;
+        async function saveVideoToDB(blob, name, brightness) {
+            try {
+                const db = await openVideoDB();
+                const tx = db.transaction(DB_STORE, 'readwrite');
+                tx.objectStore(DB_STORE).put({ blob, name, brightness }, 'active_video');
+            } catch (e) {
+                console.warn('Error guardando video en IndexedDB:', e);
+            }
+        }
+
+        async function loadVideoFromDB() {
+            try {
+                const db = await openVideoDB();
+                const tx = db.transaction(DB_STORE, 'readonly');
+                const req = tx.objectStore(DB_STORE).get('active_video');
+                req.onsuccess = () => {
+                    const data = req.result;
+                    if (data && data.blob) {
+                        applyBgVideo(data.blob, data.name || 'Video de Fondo', data.brightness || 70, false);
+                        log(`🎬 Video de fondo restaurado automáticamente: ${data.name || 'Video'}`, 'info');
+                    }
+                };
+            } catch (e) {
+                console.warn('Error cargando video de IndexedDB:', e);
+            }
+        }
+
+        async function clearVideoFromDB() {
+            try {
+                const db = await openVideoDB();
+                const tx = db.transaction(DB_STORE, 'readwrite');
+                tx.objectStore(DB_STORE).delete('active_video');
+            } catch (e) {}
+        }
+
+        function applyBgVideo(blobOrFile, fileName, brightness = 70, save = true) {
+            currentBgVideoFile = blobOrFile;
+            currentBgBrightness = brightness;
             isBgVideoPlaying = true;
-            videoStatusBadge.textContent = file.name;
+            videoBrightness.value = currentBgBrightness;
+            brightnessVal.textContent = `${currentBgBrightness}%`;
+
+            videoStatusBadge.textContent = fileName;
             videoStatusBadge.classList.add('active');
-            videoStatusBadge.title = file.name;
+            videoStatusBadge.title = fileName;
             toggleVideoBtn.disabled = false;
             clearVideoBtn.disabled = false;
 
-            // Cargar en vista local del controlador
             if (ctrlVideoBlobUrl) URL.revokeObjectURL(ctrlVideoBlobUrl);
-            ctrlVideoBlobUrl = URL.createObjectURL(file);
+            ctrlVideoBlobUrl = URL.createObjectURL(blobOrFile);
             ctrlBgVideo.src = ctrlVideoBlobUrl;
             ctrlBgVideo.style.filter = `brightness(${currentBgBrightness}%)`;
             ctrlBgVideo.style.display = 'block';
             ctrlBgVideo.play().catch(() => {});
 
-            // Transmitir al proyector
             const msg = {
                 type: 'set_bg_video',
-                blob: file,
-                name: file.name,
+                blob: blobOrFile,
+                name: fileName,
                 brightness: currentBgBrightness
             };
             primaryChannel.postMessage(msg);
             legacyChannel.postMessage(msg);
 
+            if (save) {
+                saveVideoToDB(blobOrFile, fileName, currentBgBrightness);
+            }
+        }
+
+        loadVideoBtn.onclick = () => bgVideoInput.click();
+
+        bgVideoInput.onchange = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            applyBgVideo(file, file.name, currentBgBrightness, true);
             const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
             log(`🎬 Video de fondo cargado: ${file.name} (${sizeMb} MB)`, 'success');
             showToast(`Video cargado: ${file.name}`);
@@ -914,6 +926,8 @@
                 ctrlVideoBlobUrl = null;
             }
 
+            clearVideoFromDB();
+
             primaryChannel.postMessage({ type: 'clear_bg_video' });
             legacyChannel.postMessage({ type: 'clear_bg_video' });
             log('🎬 Video de fondo retirado');
@@ -932,30 +946,38 @@
                 type: 'update_bg_video',
                 brightness: currentBgBrightness
             });
+            if (currentBgVideoFile) {
+                saveVideoToDB(currentBgVideoFile, videoStatusBadge.textContent, currentBgBrightness);
+            }
         };
 
         // ─────────────────────────────────────────────────────────────────────
-        //  3. CONEXIÓN WEBSOCKET A DOCKER (PUERTO 8080)
+        //  3. CONEXIÓN WEBSOCKET AL BACKEND (PUERTO 8080 DOCKER / 8000 NATIVO)
         // ─────────────────────────────────────────────────────────────────────
         let ws = null;
+        const wsPorts = [8080, 8000];
+        let currentPortIdx = 0;
         function initWebSocket() {
+            const port = wsPorts[currentPortIdx];
             try {
-                ws = new WebSocket('ws://localhost:8080/ws');
+                ws = new WebSocket(`ws://${window.location.hostname || 'localhost'}:${port}/ws`);
                 ws.onopen = () => {
                     wsDot.className = 'stat-dot online';
-                    wsLabel.textContent = 'Docker (8080): Conectado';
-                    log('✓ Conectado a Docker WebSocket (puerto 8080)', 'success');
+                    wsLabel.textContent = `Backend (${port}): Conectado`;
+                    log(`✓ Conectado a Backend WebSocket (puerto ${port})`, 'success');
                 };
                 ws.onclose = () => {
                     wsDot.className = 'stat-dot offline';
-                    wsLabel.textContent = 'Docker (8080): Desconectado';
-                    setTimeout(initWebSocket, 3000);
+                    wsLabel.textContent = `Backend: Desconectado`;
+                    currentPortIdx = (currentPortIdx + 1) % wsPorts.length;
+                    setTimeout(initWebSocket, 2500);
                 };
                 ws.onerror = () => {
-                    wsDot.className = 'stat-dot offline';
+                    try { ws.close(); } catch(e) {}
                 };
             } catch (err) {
-                wsDot.className = 'stat-dot offline';
+                currentPortIdx = (currentPortIdx + 1) % wsPorts.length;
+                setTimeout(initWebSocket, 2500);
             }
         }
         initWebSocket();
@@ -1013,11 +1035,8 @@
         // ─────────────────────────────────────────────────────────────────────
         function processCursor(x, y, isPinching) {
             camDot.className = 'stat-dot active';
-            const finalX = Math.max(0, Math.min(1920, Math.round(x + cursorOffsetX)));
-            const finalY = Math.max(0, Math.min(1080, Math.round(y + cursorOffsetY)));
-            cursorEl.style.display = 'block';
-            cursorEl.style.left = finalX + 'px';
-            cursorEl.style.top = finalY + 'px';
+            const finalX = Math.max(0, Math.min(1920, Math.round(x)));
+            const finalY = Math.max(0, Math.min(1080, Math.round(y)));
 
             let hoveredObj = null;
             for (const obj of polygons) {
@@ -1127,7 +1146,7 @@
                     guidedFilterActive = st.guided_filter;
                     gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.2)' : '';
 
-                    if (!isWebMode && st.active_model && modelSelect.value !== st.active_model) {
+                    if (st.active_model && modelSelect.value !== st.active_model) {
                         for (let opt of modelSelect.options) {
                             if (opt.value === st.active_model) {
                                 modelSelect.value = opt.value;
@@ -1148,33 +1167,11 @@
             try {
                 await fetch('/api/calibrate', { method: 'POST' });
             } catch (e) {}
-            if (offCtx) {
-                try {
-                    const snap = offCtx.getImageData(0, 0, W_WEB, H_WEB);
-                    bgData = new Uint8ClampedArray(snap.data);
-                } catch (e) {}
-            }
             showToast('✓ Fondo Calibrado. Entra a escena');
             log('📸 Fotograma de fondo capturado como referencia limpia.', 'success');
         }
 
         calibrateBtn.onclick = calibrateBackground;
-
-        armOnlyBtn.onclick = async () => {
-            armOnlyActive = !armOnlyActive;
-            armOnlyBtn.textContent = armOnlyActive ? '🦾 Solo Brazos: ON' : '👤 Cuerpo Completo';
-            armOnlyBtn.style.color = armOnlyActive ? 'var(--accent-green)' : 'var(--accent-yellow)';
-            armOnlyBtn.style.borderColor = armOnlyActive ? 'var(--accent-green)' : 'var(--accent-yellow)';
-            try {
-                await fetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ arm_only: armOnlyActive })
-                });
-            } catch (e) {}
-            showToast(armOnlyActive ? 'Modo: Solo Manos y Brazos' : 'Modo: Cuerpo Completo');
-            log(`Filtro anatómico: ${armOnlyActive ? 'Solo Manos y Brazos' : 'Cuerpo Completo'}`, 'info');
-        };
 
         gfToggleBtn.onclick = async () => {
             guidedFilterActive = !guidedFilterActive;
@@ -1189,33 +1186,25 @@
 
         modelSelect.addEventListener('change', async () => {
             const selected = modelSelect.value;
-            isWebMode = selected.startsWith('web_');
-
             log(`Cambiando motor a: ${selected}...`, 'info');
-            const msg = { type: 'mode_change', model: selected, isWeb: isWebMode };
+            const msg = { type: 'mode_change', model: selected };
             primaryChannel.postMessage(msg);
             legacyChannel.postMessage(msg);
 
-            if (isWebMode) {
-                streamView.style.display = 'none';
-                webCanvas.style.display = 'block';
-                startWebDifferencingEngine();
-                showToast(`Modo Navegador Web: ${selected}`);
-            } else {
-                stopWebDifferencingEngine();
-                webCanvas.style.display = 'none';
-                streamView.style.display = 'block';
-                streamView.src = '/stream?t=' + Date.now();
+            // Refrescar stream con retícula visible únicamente en el controlador
+            streamView.src = '/stream?controller=1&t=' + Date.now();
 
-                const res = await fetch('/api/model', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: selected })
-                });
-                if (res.ok) {
-                    startCursorSSE();
-                    showToast(`Motor CUDA Activo: ${selected}`);
-                    log(`✓ Motor CUDA activo: ${selected}`, 'success');
+            const res = await fetch('/api/model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: selected })
+            });
+            if (res.ok) {
+                startCursorSSE();
+                showToast(`Motor CUDA Activo: ${selected}`);
+                log(`✓ Motor CUDA activo: ${selected}`, 'success');
+                if (selected === 'background_subtraction') {
+                    setTimeout(calibrateBackground, 250);
                 }
             }
         });
@@ -1240,209 +1229,9 @@
             }
         });
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  9. MOTOR FALLBACK DE NAVEGADOR WEB (Resta de Fondo & MediaPipe)
-        // ─────────────────────────────────────────────────────────────────────
-        let webRunning = false;
-        const W_WEB = 640, H_WEB = 360;
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = W_WEB; offCanvas.height = H_WEB;
-        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-        let webHands = null;
-        let lastHandLandmarks = null;
-        let bgData = null;
-        const bgThreshold = 35;
-
-        const webFrameLoader = new Image();
-        webFrameLoader.crossOrigin = 'anonymous';
-        let webFrameBusy = false;
-
-        async function startWebDifferencingEngine() {
-            webRunning = true;
-            if (!webHands) {
-                try {
-                    webHands = new Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
-                    webHands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.25, minTrackingConfidence: 0.25 });
-                    webHands.onResults((results) => {
-                        if (!webRunning) return;
-                        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                            lastHandLandmarks = results.multiHandLandmarks;
-                            const hl = results.multiHandLandmarks[0];
-                            const idx = hl[8], thm = hl[4];
-                            const curX = idx.x * 1920, curY = idx.y * 1080;
-                            const thmX = thm.x * 1920, thmY = thm.y * 1080;
-                            const isPinching = Math.hypot(curX - thmX, curY - thmY) < 65;
-                            processCursor(curX, curY, isPinching);
-                        } else {
-                            lastHandLandmarks = null;
-                            processCursorLost();
-                        }
-                    });
-                } catch (eHand) {
-                    console.warn('MediaPipe hands web:', eHand);
-                }
-            }
-            fetchNextWebFrame();
-        }
-
-        function stopWebDifferencingEngine() {
-            webRunning = false;
-            webFrameBusy = false;
-        }
-
-        function fetchNextWebFrame() {
-            if (!webRunning || !isWebMode || webFrameBusy) return;
-            webFrameBusy = true;
-            webFrameLoader.src = '/api/frame?t=' + performance.now();
-        }
-
-        webFrameLoader.onload = async () => {
-            if (!webRunning || !isWebMode) {
-                webFrameBusy = false;
-                return;
-            }
-
-            try {
-                offCtx.drawImage(webFrameLoader, 0, 0, W_WEB, H_WEB);
-                const currentImg = offCtx.getImageData(0, 0, W_WEB, H_WEB);
-                const data = currentImg.data;
-
-                if (webHands) {
-                    try { await webHands.send({ image: offCanvas }); } catch (e) {}
-                }
-
-                if (!bgData) {
-                    bgData = new Uint8ClampedArray(data);
-                    log('📸 Fotograma inicial capturado como fondo.', 'info');
-                }
-
-                const totalPix = W_WEB * H_WEB;
-                if (armOnlyActive && (!lastHandLandmarks || lastHandLandmarks.length === 0)) {
-                    data.fill(0);
-                    offCtx.putImageData(currentImg, 0, 0);
-                    webCtx.clearRect(0, 0, 1920, 1080);
-                    const blackJpeg = offCanvas.toDataURL('image/jpeg', 0.4);
-                    primaryChannel.postMessage({ type: 'stream', image: blackJpeg });
-                    legacyChannel.postMessage({ type: 'stream', image: blackJpeg });
-                    return;
-                }
-
-                // 1. Umbral de diferencia limpio para suprimir ruido ambiental
-                const webThreshold = 46;
-                const rawDiff = new Uint8Array(totalPix);
-                for (let p = 0; p < totalPix; p++) {
-                    const i = p * 4;
-                    const dr = Math.abs(data[i]     - bgData[i]);
-                    const dg = Math.abs(data[i + 1] - bgData[i + 1]);
-                    const db = Math.abs(data[i + 2] - bgData[i + 2]);
-                    if (Math.max(dr, dg, db) > webThreshold) rawDiff[p] = 1;
-                }
-
-                // 2. Filtro de vecindad 3x3: eliminar contorno aislado y grano de cámara
-                const diffMask = new Uint8Array(totalPix);
-                for (let y = 1; y < H_WEB - 1; y++) {
-                    const row = y * W_WEB;
-                    for (let x = 1; x < W_WEB - 1; x++) {
-                        const idx = row + x;
-                        if (rawDiff[idx] === 1) {
-                            const nbrs = rawDiff[idx - 1] + rawDiff[idx + 1] + rawDiff[idx - W_WEB] + rawDiff[idx + W_WEB];
-                            if (nbrs >= 2) diffMask[idx] = 1;
-                        }
-                    }
-                }
-
-                let foregroundMask = diffMask;
-                if (armOnlyActive && lastHandLandmarks && lastHandLandmarks.length > 0) {
-                    const visited = new Uint8Array(totalPix);
-                    const queue = new Int32Array(totalPix);
-                    let head = 0, tail = 0;
-
-                    for (const lms of lastHandLandmarks) {
-                        for (let k = 0; k < lms.length; k++) {
-                            const sx = Math.min(W_WEB - 1, Math.max(0, Math.round(lms[k].x * W_WEB)));
-                            const sy = Math.min(H_WEB - 1, Math.max(0, Math.round(lms[k].y * H_WEB)));
-                            for (let dy = -2; dy <= 2; dy++) {
-                                for (let dx = -2; dx <= 2; dx++) {
-                                    const nx = sx + dx, ny = sy + dy;
-                                    if (nx >= 0 && nx < W_WEB && ny >= 0 && ny < H_WEB) {
-                                        const np = ny * W_WEB + nx;
-                                        if (diffMask[np] === 1 && visited[np] === 0) {
-                                            visited[np] = 1;
-                                            queue[tail++] = np;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        const palm = lms[9], wrist = lms[0];
-                        const pX = palm.x * W_WEB, pY = palm.y * H_WEB;
-                        const wX = wrist.x * W_WEB, wY = wrist.y * H_WEB;
-                        const adx = wX - pX, ady = wY - pY;
-                        const aDist = Math.max(15, Math.hypot(adx, ady));
-                        const anx = adx / aDist, any = ady / aDist;
-                        const maxArmReach = aDist * 4.5;
-                        const maxArmPerp = aDist * 1.8;
-
-                        while (head < tail) {
-                            const curr = queue[head++];
-                            const cx = curr % W_WEB, cy = Math.floor(curr / W_WEB);
-                            const nbs = [curr - 1, curr + 1, curr - W_WEB, curr + W_WEB];
-                            for (let n = 0; n < 4; n++) {
-                                const np = nbs[n];
-                                if (np >= 0 && np < totalPix && visited[np] === 0 && diffMask[np] === 1) {
-                                    const nx = np % W_WEB, ny = Math.floor(np / W_WEB);
-                                    // Restricción cilíndrica anatómica del brazo: evita que se pinte el torso o cuello
-                                    const alongArm = (nx - wX) * anx + (ny - wY) * any;
-                                    const perpArm = Math.abs((nx - wX) * (-any) + (ny - wY) * anx);
-                                    if (alongArm < maxArmReach && alongArm > -aDist * 2.0 && perpArm < maxArmPerp) {
-                                        visited[np] = 1;
-                                        queue[tail++] = np;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    foregroundMask = visited;
-                }
-
-                // Shader Holográfico Verde
-                for (let p = 0; p < totalPix; p++) {
-                    const i = p * 4;
-                    if (foregroundMask[p] === 1) {
-                        data[i]     = Math.min(255, Math.round(data[i]     * 0.20));
-                        data[i + 1] = Math.min(255, Math.round(data[i + 1] * 1.70 + 75));
-                        data[i + 2] = Math.min(255, Math.round(data[i + 2] * 0.35));
-                        data[i + 3] = 255;
-                    } else {
-                        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0;
-                    }
-                }
-
-                offCtx.putImageData(currentImg, 0, 0);
-                webCtx.clearRect(0, 0, 1920, 1080);
-                webCtx.drawImage(offCanvas, 0, 0, 1920, 1080);
-
-                // Enviar JPEG liviano de 640x360 al proyector (eliminando lag y sobrecarga)
-                const renderedJpeg = offCanvas.toDataURL('image/jpeg', 0.55);
-                primaryChannel.postMessage({ type: 'stream', image: renderedJpeg });
-                legacyChannel.postMessage({ type: 'stream', image: renderedJpeg });
-
-            } catch (errCycle) {
-                console.error('Error ciclo web differencing:', errCycle);
-            } finally {
-                webFrameBusy = false;
-                if (webRunning && isWebMode) setTimeout(fetchNextWebFrame, 25);
-            }
-        };
-
-        webFrameLoader.onerror = () => {
-            webFrameBusy = false;
-            if (webRunning && isWebMode) setTimeout(fetchNextWebFrame, 100);
-        };
-
         // Iniciar en modo CUDA por defecto
         startCursorSSE();
+        loadVideoFromDB();
         log('Centro de Control Touchless Inicializado Correctamente.', 'success');
     </script>
 </body>

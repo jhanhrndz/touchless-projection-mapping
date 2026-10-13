@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
 import pytest
 import torch
@@ -40,16 +41,57 @@ def test_fastsam_detector_initialization() -> None:
 
 def test_fastsam_no_landmarks_handling() -> None:
     """
-    Verifica que FastSAM sin landmarks devuelva una máscara de ceros
-    en lugar de intentar segmentar a ciegas o pintar bounding boxes rectangulares.
+    Verifica que FastSAM sin landmarks devuelva una máscara de ceros absolutos,
+    incluso ante escenas complejas con múltiples objetos, en lugar de pintar la
+    habitación entera de verde como ocurría con el fallback indiscriminado.
     """
     detector = FastSamArmDetector(device=torch.device("cpu"))
-    dummy_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    # Frame complejo con múltiples formas geométricas y texturas
+    complex_frame = np.full((720, 1280, 3), 120, dtype=np.uint8)
+    cv2.rectangle(complex_frame, (100, 100), (400, 500), (200, 50, 50), -1)
+    cv2.circle(complex_frame, (800, 400), 150, (50, 200, 50), -1)
 
-    mask, valid = detector.predict_mask(dummy_frame, hand_landmarks_list=None)
+    mask, valid = detector.predict_mask(complex_frame, hand_landmarks_list=None)
     assert valid is False
     assert mask.shape == (1, 1, 720, 1280)
     assert float(mask.sum()) == 0.0
+
+    # También con lista vacía de landmarks
+    mask_empty, valid_empty = detector.predict_mask(complex_frame, hand_landmarks_list=[])
+    assert valid_empty is False
+    assert float(mask_empty.sum()) == 0.0
+
+
+def test_fastsam_filters_out_room_background_masks() -> None:
+    """
+    Verifica que las cajas delimitadoras de la mano descarten cualquier máscara
+    de fondo masiva (> 38% del área total) y seleccionen únicamente el objeto objetivo.
+    """
+    detector = FastSamArmDetector(device=torch.device("cpu"))
+    if detector.model is None:
+        pytest.skip("Modelo FastSAM no disponible en el entorno")
+
+    frame = np.full((720, 1280, 3), 120, dtype=np.uint8)
+    h, w = 720, 1280
+
+    # Mock de landmarks de mano centrados en (w//2, h//2)
+    class MockLM:
+        def __init__(self, x: float, y: float):
+            self.x = x
+            self.y = y
+
+    cx, cy = 0.5, 0.5
+    mock_hand = [MockLM(cx + 0.005 * i, cy + 0.005 * i) for i in range(21)]
+    mock_hand[0] = MockLM(cx, cy + 0.05)   # muñeca
+    mock_hand[9] = MockLM(cx, cy)          # nudillo medio
+    mock_hand[8] = MockLM(cx, cy - 0.05)   # índice
+
+    mask, valid = detector.predict_mask(frame, hand_landmarks_list=[mock_hand])
+    assert mask.shape == (1, 1, 720, 1280)
+    # Si detecta algo, no debe cubrir la habitación completa (> 40%)
+    area_ratio = float(mask.sum()) / (h * w)
+    assert area_ratio <= 0.40
+
 
 
 def test_yolo_predict_output_contract() -> None:

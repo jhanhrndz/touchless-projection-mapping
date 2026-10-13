@@ -55,17 +55,7 @@
             display: block;
         }
 
-        /* Capa 2 alternativa: Canvas para Modos Web Fallback */
-        #web-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            mix-blend-mode: screen;
-            display: none;
-        }
+
 
         /* Aviso discreto que se desvanece tras 3.5 segundos */
         #init-notice {
@@ -89,9 +79,6 @@
         <!-- Stream Holográfico CUDA (Capa 2) -->
         <img id="cuda-stream" src="/stream" alt="" />
 
-        <!-- Canvas de Renderizado Web (Capa 2 alternativa) -->
-        <canvas id="web-canvas" width="1920" height="1080"></canvas>
-
         <div id="init-notice">🖥️ Pantalla Proyector Activa | Presiona [F] o [F11] para Pantalla Completa</div>
     </div>
 
@@ -105,12 +92,9 @@
         const container = document.getElementById('projection-container');
         const bgVideo = document.getElementById('bg-video');
         const cudaStream = document.getElementById('cuda-stream');
-        const webCanvas = document.getElementById('web-canvas');
-        const webCtx = webCanvas.getContext('2d');
         const initNotice = document.getElementById('init-notice');
 
         let currentVideoBlobUrl = null;
-        let lastFrameImg = new Image();
         let currentKnownBackbone = '';
 
         // Desvanecer aviso inicial
@@ -154,8 +138,6 @@
         const legacyChannel = new BroadcastChannel('digital_arm_channel');
 
         function refreshStream() {
-            cudaStream.style.display = 'block';
-            webCanvas.style.display = 'none';
             cudaStream.src = '/stream?t=' + Date.now();
         }
 
@@ -163,30 +145,12 @@
             const data = event.data;
             if (!data) return;
 
-            // 1. Conmutación de modelo (CUDA vs Navegador)
+            // 1. Conmutación de modelo (refrescar stream limpio para el proyector)
             if (data.type === 'mode_change' || data.type === 'model_changed') {
-                if (data.isWeb) {
-                    cudaStream.style.display = 'none';
-                    webCanvas.style.display = 'block';
-                } else {
-                    refreshStream();
-                }
+                refreshStream();
             }
 
-            // 2. Fotograma en vivo desde motor Web Fallback
-            else if (data.type === 'stream') {
-                if (webCanvas.style.display !== 'block') {
-                    cudaStream.style.display = 'none';
-                    webCanvas.style.display = 'block';
-                }
-                lastFrameImg.onload = () => {
-                    webCtx.clearRect(0, 0, 1920, 1080);
-                    webCtx.drawImage(lastFrameImg, 0, 0, 1920, 1080);
-                };
-                lastFrameImg.src = data.image;
-            }
-
-            // 3. Gestión de Video de Fondo
+            // 2. Gestión de Video de Fondo
             else if (data.type === 'set_bg_video') {
                 if (currentVideoBlobUrl) {
                     URL.revokeObjectURL(currentVideoBlobUrl);
@@ -236,6 +200,35 @@
 
         primaryChannel.onmessage = handleMessage;
         legacyChannel.onmessage = handleMessage;
+
+        // Recuperar video activo de IndexedDB si la ventana de proyección se recarga
+        const DB_NAME = 'TouchlessProjectionDB';
+        const DB_STORE = 'bg_video_store';
+        function loadVideoFromDB() {
+            try {
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onsuccess = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(DB_STORE)) return;
+                    const tx = db.transaction(DB_STORE, 'readonly');
+                    const getReq = tx.objectStore(DB_STORE).get('active_video');
+                    getReq.onsuccess = () => {
+                        const data = getReq.result;
+                        if (data && data.blob) {
+                            if (currentVideoBlobUrl) URL.revokeObjectURL(currentVideoBlobUrl);
+                            currentVideoBlobUrl = URL.createObjectURL(data.blob);
+                            bgVideo.src = currentVideoBlobUrl;
+                            if (data.brightness !== undefined) {
+                                bgVideo.style.filter = `brightness(${data.brightness}%)`;
+                            }
+                            bgVideo.style.display = 'block';
+                            bgVideo.play().catch(() => {});
+                        }
+                    };
+                };
+            } catch (e) {}
+        }
+        loadVideoFromDB();
 
         // Notificar al controlador que la ventana de proyección está lista
         primaryChannel.postMessage({ type: 'projection_ready' });

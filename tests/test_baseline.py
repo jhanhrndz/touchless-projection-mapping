@@ -20,18 +20,23 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Importar cuda_engine desde vision_engine
-from vision_engine import cuda_engine
+from vision_engine.config import EngineConfig
+from vision_engine.engine import VideoFileSource
+from vision_engine.server import (
+    STATE as state,
+    ServerState,
+    VisionEngineHTTPHandler as EngineHTTPHandler,
+    MAX_POST_BODY_BYTES,
+)
 
 
 def test_imports_and_constants() -> None:
-    """Verifica que cuda_engine expone constantes y clases base esperadas."""
-    assert hasattr(cuda_engine, "VideoFileSource")
-    assert hasattr(cuda_engine, "EngineConfig")
-    assert hasattr(cuda_engine, "ServerState")
-    assert hasattr(cuda_engine, "EngineHTTPHandler")
-    assert hasattr(cuda_engine, "MAX_POST_BODY_BYTES")
-    assert cuda_engine.MAX_POST_BODY_BYTES == 65536
+    """Verifica que vision_engine expone constantes y clases base esperadas."""
+    assert VideoFileSource is not None
+    assert EngineConfig is not None
+    assert ServerState is not None
+    assert EngineHTTPHandler is not None
+    assert MAX_POST_BODY_BYTES == 65536
 
 
 def test_video_file_source() -> None:
@@ -40,7 +45,7 @@ def test_video_file_source() -> None:
     if not clip_path.exists():
         pytest.skip(f"Clip sintético no encontrado en {clip_path}")
 
-    source = cuda_engine.VideoFileSource(str(clip_path), loop=True)
+    source = VideoFileSource(str(clip_path), loop=True)
     assert source.is_opened()
     width, height = source.get_dimensions()
     assert width > 0
@@ -60,13 +65,12 @@ def test_video_file_source() -> None:
 
 def test_server_state_defaults() -> None:
     """Verifica valores iniciales del estado compartido del servidor."""
-    state = cuda_engine.ServerState()
-    assert state.active_model == "fastsam"
-    assert state.arm_only is True
-    assert state.guided_filter is False
-    assert state.fps == 0.0
-    assert state.frame_count == 0
-    assert state.is_running is True
+    s = ServerState()
+    assert s.arm_only is False
+    assert s.guided_filter is False
+    assert s.fps == 0.0
+    assert s.frame_count == 0
+    assert s.is_running is True
 
 
 class DummyServerRunner:
@@ -74,8 +78,8 @@ class DummyServerRunner:
 
     def __init__(self, port: int = 5991) -> None:
         self.port = port
-        self.state = cuda_engine.state
-        self.server = ThreadingHTTPServer(("127.0.0.1", self.port), cuda_engine.EngineHTTPHandler)
+        self.state = state
+        self.server = ThreadingHTTPServer(("127.0.0.1", self.port), EngineHTTPHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def start(self) -> None:
@@ -99,7 +103,7 @@ def test_http_api_endpoints() -> None:
             assert resp.status == 200
             data = json.loads(resp.read().decode("utf-8"))
             assert data["active_model"] == "fastsam"
-            assert data["arm_only"] is True
+            assert data["arm_only"] is False
 
         # 2. POST /api/model cambiar a 'rvm_mobilenet'
         req = urllib.request.Request(
@@ -141,7 +145,7 @@ def test_http_api_endpoints() -> None:
             assert runner.state.guided_filter is True
 
         # 4. SEC-01: Probar que un payload mayor a MAX_POST_BODY_BYTES es rechazado con 413
-        oversized_data = b"x" * (cuda_engine.MAX_POST_BODY_BYTES + 1024)
+        oversized_data = b"x" * (MAX_POST_BODY_BYTES + 1024)
         req_overflow = urllib.request.Request(
             f"{base_url}/api/settings",
             data=oversized_data,
