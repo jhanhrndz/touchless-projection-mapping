@@ -288,7 +288,20 @@ class YoloHumanParseDetector:
             return torch.zeros((1, 1, h, w), device=target_device), False
 
         self.frame_counter += 1
+        is_custom_arm = bool(self.model is not None and getattr(self.model, "names", {}) and 0 in self.model.names and "arm" in str(self.model.names[0]).lower())
         has_hands = bool(hand_landmarks_list and len(hand_landmarks_list) > 0)
+
+        # 1. Gate de presencia de manos: si no hay manos en escena, no emitir NADA en el fondo
+        if is_custom_arm and not has_hands:
+            if self.hold_frames > 0 and self.prev_mask is not None:
+                self.hold_frames -= 1
+                decayed = self.prev_mask * self.decay_factor
+                self.prev_mask = decayed.clone()
+                return decayed, True
+            self.tracking_active = False
+            self.prev_mask = None
+            self.last_confidence = 0.0
+            return torch.zeros((1, 1, h, w), device=target_device), False
 
         # Optimización de cadencia: en fotogramas pares (cuando ya se tiene máscara activa previa),
         # reutilizamos la máscara con persistencia temporal EMA, reduciendo a la mitad el cómputo de la GPU.
@@ -302,25 +315,19 @@ class YoloHumanParseDetector:
                 return decayed, True
             return self.prev_mask, True
 
-        is_custom_arm = bool(self.model is not None and getattr(self.model, "names", {}) and 0 in self.model.names and "arm" in str(self.model.names[0]).lower())
         if is_custom_arm:
             target_classes = [0]
-            current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
+            current_conf = 0.20 if self.tracking_active else 0.24
+            parse_sz = 480
         else:
             target_classes = [3, 4]
             current_conf = self.cfg.parse_conf_tracking if self.tracking_active else self.cfg.parse_conf_base
-        parse_sz = getattr(self.cfg, "parse_imgsz", 384)
-
-        # Pre-escalado eficiente con OpenCV a 640x360 para transferir 4x menos datos por PCIe
-        if w > 640 or h > 360:
-            infer_frame = cv2.resize(frame_bgr, (640, 360), interpolation=cv2.INTER_AREA)
-        else:
-            infer_frame = frame_bgr
+            parse_sz = getattr(self.cfg, "parse_imgsz", 384)
 
         try:
             with torch.inference_mode():
                 results = self.model.predict(
-                    source=infer_frame,
+                    source=frame_bgr,
                     device=target_device,
                     imgsz=parse_sz,
                     conf=current_conf,
@@ -359,21 +366,46 @@ class YoloHumanParseDetector:
             self.last_confidence = 0.0
 
         masks_tensor = results[0].masks.data  # [N, H_out, W_out]
+        boxes_tensor = results[0].boxes.xyxy if (results[0].boxes is not None and hasattr(results[0].boxes, "xyxy")) else None
         classes_tensor = results[0].boxes.cls if results[0].boxes is not None else None
         num_instances = masks_tensor.shape[0]
 
+        # Calcular zonas de manos para discriminación espacial (rechazar falsos positivos en paredes lejanas)
+        hand_zones = []
+        if is_custom_arm and has_hands and hand_landmarks_list:
+            for hl in hand_landmarks_list:
+                xs = [getattr(lm, "x", 0.0) * w for lm in hl]
+                ys = [getattr(lm, "y", 0.0) * h for lm in hl]
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+                pad_x = max(100.0, (max_x - min_x) * 2.5)
+                pad_y = max(100.0, (max_y - min_y) * 2.5)
+                hand_zones.append((min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y))
+
         valid_instances = []
         total_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
-
         allowed_classes = (0,) if is_custom_arm else (3, 4)
+
         for i in range(num_instances):
             inst_area = float(masks_tensor[i].sum().item()) / total_pixels
             if inst_area < 0.0003:
                 continue
 
             cls_id = int(classes_tensor[i].item()) if classes_tensor is not None else (0 if is_custom_arm else 3)
-            if cls_id in allowed_classes:
-                valid_instances.append(masks_tensor[i])
+            if cls_id not in allowed_classes:
+                continue
+
+            # Filtrado espacial: la caja debe intersectar la zona de la mano para no pintar fondos
+            if is_custom_arm and hand_zones and boxes_tensor is not None and i < len(boxes_tensor):
+                bx1, by1, bx2, by2 = boxes_tensor[i].tolist()
+                overlaps_hand = any(
+                    not (bx2 < hz[0] or bx1 > hz[2] or by2 < hz[1] or by1 > hz[3])
+                    for hz in hand_zones
+                )
+                if not overlaps_hand:
+                    continue  # Es un falso positivo del fondo lejos de la mano
+
+            valid_instances.append(masks_tensor[i])
 
         if valid_instances:
             stacked = torch.stack(valid_instances)
@@ -398,13 +430,26 @@ class YoloHumanParseDetector:
         if best_mask.shape[-2:] != (h, w):
             best_mask = F.interpolate(best_mask, size=(h, w), mode="bilinear", align_corners=False)
 
+        # Fusión anatómica con polígonos de manos de MediaPipe para garantizar dedos y palma 100% sólidos
+        if is_custom_arm and has_hands and hand_landmarks_list:
+            hand_poly_np = np.zeros((h, w), dtype=np.float32)
+            for hl in hand_landmarks_list:
+                pts = np.array([[int(getattr(lm, "x", 0.0) * w), int(getattr(lm, "y", 0.0) * h)] for lm in hl], dtype=np.int32)
+                if len(pts) >= 4:
+                    hull = cv2.convexHull(pts)
+                    cv2.fillPoly(hand_poly_np, [hull], 1.0)
+            if hand_poly_np.sum() > 0:
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+                hand_poly_np = cv2.dilate(hand_poly_np, kernel)
+                hand_poly_t = torch.from_numpy(hand_poly_np).unsqueeze(0).unsqueeze(0).to(target_device)
+                best_mask = torch.clamp(best_mask + hand_poly_t, 0.0, 1.0)
+
         best_mask = torch.clamp(best_mask, 0.0, 1.0)
 
         # Suavizado temporal EMA para máxima estabilidad y fluidez
         if self.prev_mask is not None and self.prev_mask.shape == best_mask.shape:
             best_mask = best_mask * self.ema_alpha + self.prev_mask * (1.0 - self.ema_alpha)
         self.prev_mask = best_mask.clone()
-        # Si MediaPipe detecta manos activas, extendemos el tiempo de retención para evitar cualquier caída
         self.hold_frames = self.max_hold_frames if has_hands else max(3, self.max_hold_frames // 2)
 
         return best_mask, True
