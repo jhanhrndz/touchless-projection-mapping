@@ -156,16 +156,16 @@ class VisionEngine:
     def _resolve_backbone_name(self, model_key: str) -> str:
         k = model_key.lower()
         if "mobilenet" in k or ("rvm" in k and "resnet" not in k):
-            return "RVM MobileNetV3 (CUDA - 35 FPS)"
+            return "RVM MobileNetV3 (CUDA - 60 FPS)"
         elif "resnet" in k:
-            return "RVM ResNet50 (CUDA - 10 FPS)"
+            return "RVM ResNet50 (CUDA - 30 FPS)"
+        elif "yolo" in k:
+            return "YOLO11-seg (CUDA - 45 FPS)"
+        elif "background" in k or "fondo" in k or "resta" in k:
+            return "Resta de Fondo (GPU/CPU - 60 FPS)"
         elif "fastsam" in k:
             return "FastSAM Point-Prompt (CUDA - 30 FPS)"
-        elif "yolo" in k:
-            return "YOLO11-seg (CUDA - 40 FPS)"
-        elif "background" in k or "fondo" in k or "resta" in k:
-            return "Resta de Fondo (GPU/CPU - 45 FPS)"
-        return "RVM MobileNetV3 (CUDA - 35 FPS)"
+        return "RVM MobileNetV3 (CUDA - 60 FPS)"
 
     def run(
         self,

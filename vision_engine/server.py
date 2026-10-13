@@ -36,7 +36,7 @@ class EngineState:
         self.latest_raw_bgr = None
         self.fps: float = 0.0
         self.latency_ms: float = 0.0
-        self.backbone_name: str = "FastSAM Point-Prompt (CUDA - 58 FPS)"
+        self.backbone_name: str = "RVM MobileNetV3 (CUDA - 60 FPS)"
         self.requested_mode: Optional[str] = None
         self.reset_requested: bool = False
         self.guided_filter_on: bool = False
@@ -60,17 +60,17 @@ class EngineState:
     def active_model(self) -> str:
         with self.lock:
             b = (self.requested_mode or self.backbone_name).lower()
-        if "yolo" in b:
-            return "yolo"
-        elif "fastsam" in b:
-            return "fastsam"
-        elif "mobilenet" in b:
+        if "mobilenet" in b or "rvm_m" in b:
             return "rvm_mobilenet"
-        elif "resnet" in b:
+        elif "resnet" in b or "rvm_r" in b:
             return "rvm_resnet"
+        elif "yolo" in b:
+            return "yolo"
         elif "background" in b or "fondo" in b or "resta" in b:
             return "background_subtraction"
-        return "fastsam"
+        elif "fastsam" in b:
+            return "fastsam"
+        return "rvm_mobilenet"
 
     @active_model.setter
     def active_model(self, val: str) -> None:

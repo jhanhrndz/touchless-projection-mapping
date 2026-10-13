@@ -32,8 +32,8 @@ class YoloPipelineConfig:
     yolo_model_path: str = "yolo11n-seg.pt"
     fastsam_model_path: str = "FastSAM-s.pt"
     imgsz: int = 640
-    conf_base: float = 0.22
-    conf_tracking: float = 0.16
+    conf_base: float = 0.28
+    conf_tracking: float = 0.22
     fastsam_conf: float = 0.20
     retina_masks: bool = True
     use_half: bool = True
@@ -41,7 +41,7 @@ class YoloPipelineConfig:
 
 
 class YoloArmDetector:
-    """Detector de extremidades superiores basado en YOLO11-seg con filtrado por instancia."""
+    """Detector y segmentador de silueta humana completa basado en YOLO11-seg con fusión multinstancia."""
 
     def __init__(self, config: Optional[YoloPipelineConfig] = None, device: Optional[torch.device] = None) -> None:
         self.cfg = config or YoloPipelineConfig()
@@ -58,9 +58,7 @@ class YoloArmDetector:
             if not model_p.exists():
                 search_paths = [
                     MODELS_DIR / "yolo11n-seg.pt",
-                    MODELS_DIR / "yolo11s-seg.pt",
                     Path(__file__).resolve().parent / "yolo11n-seg.pt",
-                    Path(__file__).resolve().parent.parent / "models" / "yolo11n-seg.pt",
                 ]
                 for sp in search_paths:
                     if sp.exists():
@@ -85,7 +83,8 @@ class YoloArmDetector:
         device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, bool]:
         """
-        Ejecuta la inferencia de YOLO11-seg con retina_masks y selecciona la instancia del brazo.
+        Ejecuta la inferencia de YOLO11-seg y fusiona todas las instancias válidas de la persona
+        (cabeza, torso y extremidades) en una silueta humana continua y sólida sin parpadeos.
 
         Returns:
             Tuple con (tensor_mascara [1, 1, H, W], booleano_deteccion_valida).
@@ -96,7 +95,7 @@ class YoloArmDetector:
         if self.model is None:
             return torch.zeros((1, 1, h, w), device=target_device), False
 
-        # Umbral adaptativo: menor si ya estamos siguiendo la extremidad
+        # Umbral adaptativo: menor si ya estamos siguiendo a la persona
         current_conf = self.cfg.conf_tracking if self.tracking_active else self.cfg.conf_base
         is_cuda = target_device.type == "cuda"
         use_half = self.cfg.use_half and is_cuda
@@ -107,7 +106,7 @@ class YoloArmDetector:
                 device=target_device,
                 imgsz=self.cfg.imgsz,
                 conf=current_conf,
-                classes=[0],             # Clase 0 = Persona / extremidades
+                classes=[0],             # Clase 0 = Persona (cuerpo completo)
                 retina_masks=self.cfg.retina_masks,
                 iou=self.cfg.iou_threshold,
                 verbose=False
@@ -135,48 +134,53 @@ class YoloArmDetector:
         masks_tensor = results[0].masks.data  # [N, H_out, W_out]
         num_instances = masks_tensor.shape[0]
 
-        # Si hay una sola instancia, seleccionarla directamente
+        # Fusión multinstancia de cuerpo completo:
+        # Si YOLO fragmenta el cuerpo en varias instancias (e.g. torso/cabeza por un lado
+        # y brazos por otro), las fusionamos todas en una silueta única continua.
         if num_instances == 1:
-            best_idx = 0
+            combined = masks_tensor[0:1]
             self.tracking_active = True
         else:
-            # Múltiples instancias: Seleccionar con máxima coincidencia anatómica o persistencia temporal
-            best_idx = 0
-            if hand_landmarks_list:
-                best_score = -1.0
-                masks_cpu = masks_tensor.detach().cpu().numpy()
-                max_h = masks_tensor.shape[1] - 1
-                max_w = masks_tensor.shape[2] - 1
-                for i in range(num_instances):
-                    score = 0.0
+            valid_instances = []
+            total_mask_pixels = float(masks_tensor.shape[1] * masks_tensor.shape[2])
+            masks_cpu = masks_tensor.detach().cpu().numpy()
+
+            for i in range(num_instances):
+                inst_area = float(masks_tensor[i].sum().item()) / total_mask_pixels
+                # Descartar ruido minúsculo en esquinas (< 0.5% del cuadro)
+                if inst_area < 0.005:
+                    continue
+
+                # Comprobar si la instancia contiene landmarks de la mano
+                touches_hand = False
+                if hand_landmarks_list:
+                    max_h = masks_tensor.shape[1] - 1
+                    max_w = masks_tensor.shape[2] - 1
                     for hl in hand_landmarks_list:
-                        # Muñeca (0), base índice (5), base medio (9), base anular (13), base meñique (17)
                         for lm_idx in (0, 5, 9, 13, 17):
                             lx = min(max_w, max(0, int(hl[lm_idx].x * max_w)))
                             ly = min(max_h, max(0, int(hl[lm_idx].y * max_h)))
-                            score += float(masks_cpu[i, ly, lx])
-                    if score > best_score:
-                        best_score = score
-                        best_idx = i
-                self.tracking_active = True
-            elif self.prev_mask is not None:
-                # Mantener la instancia con mayor solapamiento respecto al fotograma previo
-                prev_ds = F.interpolate(
-                    self.prev_mask, size=(masks_tensor.shape[1], masks_tensor.shape[2]), mode="nearest"
-                ).squeeze()
-                best_iou = -1.0
-                for i in range(num_instances):
-                    intersection = (masks_tensor[i] * prev_ds).sum()
-                    union = masks_tensor[i].sum() + prev_ds.sum() - intersection + 1e-6
-                    iou = float(intersection / union)
-                    if iou > best_iou:
-                        best_iou = iou
-                        best_idx = i
+                            if float(masks_cpu[i, ly, lx]) > 0.5:
+                                touches_hand = True
+                                break
+
+                # Aceptar la instancia si:
+                # 1. Toca la mano del usuario (instancia del brazo), O
+                # 2. Ocupa un área corporal relevante (>= 2.5% del encuadre, torso/cabeza)
+                if touches_hand or inst_area >= 0.025:
+                    valid_instances.append(masks_tensor[i])
+
+            if valid_instances:
+                stacked = torch.stack(valid_instances)
+                combined = torch.clamp(stacked.sum(dim=0, keepdim=True), 0.0, 1.0)
                 self.tracking_active = True
             else:
+                combined = torch.clamp(masks_tensor.sum(dim=0, keepdim=True), 0.0, 1.0)
                 self.tracking_active = True
 
-        best_mask = masks_tensor[best_idx : best_idx + 1].unsqueeze(0).float()
+        best_mask = combined.float()
+        if best_mask.ndim == 3:
+            best_mask = best_mask.unsqueeze(0)
 
         # Asegurar coincidencia exacta de dimensiones espaciales con el fotograma
         if best_mask.shape[-2:] != (h, w):
@@ -184,9 +188,9 @@ class YoloArmDetector:
 
         best_mask = torch.clamp(best_mask, 0.0, 1.0)
 
-        # Suavizado temporal EMA para eliminar parpadeo y vibración de bordes
+        # Suavizado temporal EMA para máxima estabilidad y fluidez sin parpadeos
         if self.prev_mask is not None and self.prev_mask.shape == best_mask.shape:
-            best_mask = best_mask * 0.70 + self.prev_mask * 0.30
+            best_mask = best_mask * 0.75 + self.prev_mask * 0.25
         self.prev_mask = best_mask.clone()
         self.hold_frames = self.max_hold_frames
 

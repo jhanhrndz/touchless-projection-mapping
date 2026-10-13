@@ -550,11 +550,10 @@
 
             <!-- SELECTOR DINÁMICO DE MODELOS -->
             <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
-                <option value="rvm_mobilenet">1. RVM MobileNetV3 (CUDA - 35 FPS) [Recomendado]</option>
-                <option value="fastsam">2. FastSAM Point-Prompt (CUDA - 30 FPS)</option>
-                <option value="yolo">3. YOLO11-seg (CUDA - 40 FPS)</option>
-                <option value="rvm_resnet">4. RVM ResNet50 (CUDA - 12 FPS)</option>
-                <option value="background_subtraction">5. Resta de Fondo (GPU/CPU - 45 FPS)</option>
+                <option value="rvm_mobilenet">1. RVM MobileNetV3 (CUDA - 60 FPS) [Recomendado]</option>
+                <option value="rvm_resnet">2. RVM ResNet50 (CUDA - 30 FPS) [Alta Calidad]</option>
+                <option value="yolo">3. YOLO11-seg (CUDA - 45 FPS) [Cuerpo Completo]</option>
+                <option value="background_subtraction">4. Resta de Fondo (GPU/CPU - 60 FPS)</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>

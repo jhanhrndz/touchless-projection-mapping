@@ -27,7 +27,7 @@ def main() -> None:
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host HTTP (por defecto 0.0.0.0)")
     parser.add_argument("--native-projector", action="store_true", help="Abrir ventana nativa OpenCV en monitor secundario")
     parser.add_argument("--show-window", action="store_true", help="Mostrar ventana de depuración OpenCV")
-    parser.add_argument("--model", type=str, default="fastsam", help="Modelo inicial (fastsam, yolo, rvm_mobilenet, rvm_resnet, background_subtraction)")
+    parser.add_argument("--model", type=str, default="rvm_mobilenet", help="Modelo inicial (rvm_mobilenet, rvm_resnet, yolo, background_subtraction)")
     args = parser.parse_args()
 
     cfg = EngineConfig.from_env()

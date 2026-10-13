@@ -28,7 +28,7 @@ def test_yolo_detector_initialization() -> None:
     detector = YoloArmDetector(config=cfg, device=torch.device("cpu"))
     assert detector is not None
     assert detector.cfg.retina_masks is True
-    assert detector.cfg.conf_base == 0.22
+    assert detector.cfg.conf_base == 0.28
 
 
 def test_fastsam_detector_initialization() -> None:

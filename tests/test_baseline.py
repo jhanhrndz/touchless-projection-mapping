@@ -102,13 +102,13 @@ def test_http_api_endpoints() -> None:
         with urllib.request.urlopen(f"{base_url}/api/status", timeout=2) as resp:
             assert resp.status == 200
             data = json.loads(resp.read().decode("utf-8"))
-            assert data["active_model"] == "fastsam"
+            assert data["active_model"] == "rvm_mobilenet"
             assert data["arm_only"] is False
 
-        # 2. POST /api/model cambiar a 'rvm_mobilenet'
+        # 2. POST /api/model cambiar a 'yolo'
         req = urllib.request.Request(
             f"{base_url}/api/model",
-            data=json.dumps({"model": "rvm_mobilenet"}).encode("utf-8"),
+            data=json.dumps({"model": "yolo"}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -116,7 +116,7 @@ def test_http_api_endpoints() -> None:
             assert resp.status == 200
             data = json.loads(resp.read().decode("utf-8"))
             assert data["success"] is True
-            assert runner.state.active_model == "rvm_mobilenet"
+            assert runner.state.active_model == "yolo"
 
         # 2b. POST /api/model cambiar a 'background_subtraction' (Modelo 5)
         req_bg = urllib.request.Request(
