@@ -2,8 +2,6 @@
 
 import argparse
 import logging
-import sys
-from pathlib import Path
 
 from vision_engine.config import EngineConfig
 from vision_engine.engine import VisionEngine

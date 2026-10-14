@@ -10,12 +10,11 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
+
+import cv2
 
 from vision_engine.config import FRONTEND_DIR, OBJECTS_PATH, BACKEND_DATA_DIR
-
-if TYPE_CHECKING:
-    from vision_engine.config import EngineConfig
 
 logger = logging.getLogger("vision_engine.server")
 
@@ -37,7 +36,8 @@ class EngineState:
         self.fps: float = 0.0
         self.latency_ms: float = 0.0
         self.confidence: float = 0.0
-        self.backbone_name: str = "RVM MobileNetV3 (CUDA - 60 FPS)"
+        self.frame_count: int = 0
+        self.backbone_name: str = "RVM MobileNetV3 (Segmentación Suave)"
         self.requested_mode: Optional[str] = None
         self.reset_requested: bool = False
         self.guided_filter_on: bool = True
@@ -48,7 +48,6 @@ class EngineState:
         self.show_hud: bool = False
         self.running: bool = True
         self.active_monitor: int = 0
-        self.frame_count: int = 0
         self.cursor = {
             "detected": False,
             "x": 0.0,
@@ -249,10 +248,18 @@ class VisionEngineHTTPHandler(SimpleHTTPRequestHandler):
                 time.sleep(0.016)
             return
 
-        # 6. Fotograma crudo bajo demanda
+        # 6. Fotograma crudo bajo demanda (codificado al vuelo solo si un cliente lo solicita)
         if self.path.startswith("/api/frame"):
             with STATE.lock:
                 frame = STATE.latest_raw_jpeg
+                raw_bgr = STATE.latest_raw_bgr
+            if frame is None and raw_bgr is not None:
+                try:
+                    _, enc = cv2.imencode(".jpg", raw_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    frame = enc.tobytes()
+                except Exception:
+                    frame = None
+
             if frame is not None:
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")

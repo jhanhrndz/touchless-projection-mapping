@@ -10,8 +10,8 @@ echo   [2] Laptop Operador:           http://localhost:5051/controller.html
 echo   [3] Pared Proyector:           http://localhost:5051/projector.html
 echo.
 echo   Atajos de teclado en vivo:
-echo     - [Espacio] o [C] : Calibrar fondo limpio (Modelo 5)
-echo     - [B]             : Alternar entre los 5 motores de IA / Matemática
+echo     - [Espacio] o [C] : Calibrar fondo limpio (Modelo 4)
+echo     - [B]             : Alternar entre los 4 motores de IA / Matemática
 echo     - [G]             : Activar / Desactivar Fast Guided Filter
 echo     - [V]             : Pausar / Reanudar video de fondo
 echo     - [Q] o [ESC]     : Detener motor

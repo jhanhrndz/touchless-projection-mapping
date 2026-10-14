@@ -585,10 +585,10 @@
         <!-- SECCIÓN DERECHA: CONTROLES AGRUPADOS -->
         <div class="controls-group">
             <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
-                <option value="rvm_mobilenet">1. RVM MobileNetV3 (60 FPS) [Recomendado]</option>
-                <option value="rvm_resnet">2. RVM ResNet50 (30 FPS) [Alta Calidad]</option>
-                <option value="yolo">3. YOLO11-seg (45 FPS) [Cuerpo Completo]</option>
-                <option value="background_subtraction">4. Resta de Fondo (60 FPS)</option>
+                <option value="rvm_mobilenet">1. RVM MobileNetV3 (Tiempo Real / Balanceado) [Recomendado]</option>
+                <option value="rvm_resnet">2. RVM ResNet50 (Máxima Fidelidad / Red Profunda)</option>
+                <option value="yolo">3. YOLO11-seg (Segmentación Corporal Robusta)</option>
+                <option value="background_subtraction">4. Resta de Fondo (Ultraligero / Sin IA)</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
@@ -1111,36 +1111,41 @@
             }
 
             if (hoveredObj) {
+                const targetDeviceId = hoveredObj.device_id || hoveredObj.id;
                 if (currentHoveredId !== hoveredObj.id) {
                     if (currentHoveredId && ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                        const prevObj = polygons.find(p => p.id === currentHoveredId);
+                        const prevDeviceId = (prevObj && prevObj.device_id) ? prevObj.device_id : currentHoveredId;
+                        ws.send(JSON.stringify({ type: "hover", id: prevDeviceId, enter: false }));
                     }
                     document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover');
 
                     currentHoveredId = hoveredObj.id;
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: true }));
+                        ws.send(JSON.stringify({ type: "hover", id: targetDeviceId, enter: true }));
                     }
                     document.getElementById(`poly-${currentHoveredId}`)?.classList.add('hover');
-                    log(`Dedo sobre figura: ${hoveredObj.label || hoveredObj.id}`, 'info');
+                    log(`Dedo sobre figura: ${hoveredObj.label || hoveredObj.id} (${targetDeviceId})`, 'info');
                 }
 
                 if (isPinching && !wasPinching) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "click", id: currentHoveredId, button: "left" }));
+                        ws.send(JSON.stringify({ type: "click", id: targetDeviceId, button: "left" }));
                     }
                     const polyEl = document.getElementById(`poly-${currentHoveredId}`);
                     if (polyEl) {
                         polyEl.classList.add('active');
                         setTimeout(() => polyEl.classList.remove('active'), 250);
                     }
-                    log(`💥 CLIC en figura: ${hoveredObj.label || hoveredObj.id}`, 'success');
+                    log(`💥 CLIC en figura: ${hoveredObj.label || hoveredObj.id} → ${targetDeviceId}`, 'success');
                     showToast(`¡Clic en ${hoveredObj.label || hoveredObj.id}!`);
                 }
             } else {
                 if (currentHoveredId) {
                     if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                        const prevObj = polygons.find(p => p.id === currentHoveredId);
+                        const prevDeviceId = (prevObj && prevObj.device_id) ? prevObj.device_id : currentHoveredId;
+                        ws.send(JSON.stringify({ type: "hover", id: prevDeviceId, enter: false }));
                     }
                     document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover', 'active');
                     currentHoveredId = null;
@@ -1154,7 +1159,9 @@
             pinchAlert.classList.remove('active');
             if (currentHoveredId) {
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "hover", id: currentHoveredId, enter: false }));
+                    const prevObj = polygons.find(p => p.id === currentHoveredId);
+                    const prevDeviceId = (prevObj && prevObj.device_id) ? prevObj.device_id : currentHoveredId;
+                    ws.send(JSON.stringify({ type: "hover", id: prevDeviceId, enter: false }));
                 }
                 document.getElementById(`poly-${currentHoveredId}`)?.classList.remove('hover', 'active');
                 currentHoveredId = null;

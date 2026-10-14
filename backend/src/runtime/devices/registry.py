@@ -8,6 +8,7 @@ from .http_device import HttpDevice
 from .kasa_device import KasaDevice
 from .mock_device import MockDevice
 from .udp_device import UdpDevice
+from .wifi_switch_device import WifiSwitchDevice
 
 DeviceFactory = Callable[[str, dict[str, Any]], Device]
 
@@ -19,6 +20,7 @@ class DeviceRegistry:
         self.register_factory("mock", _build_mock)
         self.register_factory("kasa", _build_kasa)
         self.register_factory("http", _build_http)
+        self.register_factory("wifi_switch", _build_wifi_switch)
         self.register_factory("udp", _build_udp)
         self.register_factory("book_pusher", _build_book_pusher)
 
@@ -134,4 +136,21 @@ def _build_book_pusher(object_id: str, spec: dict[str, Any]) -> Device:
         label=spec.get("label", ""),
         host=cfg["host"],
         port=int(cfg.get("port", 5007)),
+    )
+
+
+def _build_wifi_switch(object_id: str, spec: dict[str, Any]) -> Device:
+    cfg = spec.get("config", {})
+    return WifiSwitchDevice(
+        object_id=object_id,
+        label=spec.get("label", ""),
+        mode=cfg.get("mode", "http_toggle"),
+        host=cfg.get("host", ""),
+        url=cfg.get("url", ""),
+        on_url=cfg.get("on_url", ""),
+        off_url=cfg.get("off_url", ""),
+        status_url=cfg.get("status_url", ""),
+        method=cfg.get("method", "GET"),
+        timeout_s=float(cfg.get("timeout_s", 2.0)),
+        relay_index=int(cfg.get("relay_index", 0)),
     )

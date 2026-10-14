@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
@@ -12,7 +13,7 @@ import numpy as np
 import torch
 
 from vision_engine.config import EngineConfig, MODELS_DIR
-from vision_engine.gpu_renderer import GpuHologramRenderer
+from vision_engine.gpu_renderer import GpuHologramRenderer, GpuRendererConfig
 from vision_engine.hand_tracker import HandInteractionTracker
 from vision_engine.pipelines.rvm_background import (
     BackgroundSubtractionConfig,
@@ -36,8 +37,59 @@ def frame_is_valid(frame: Optional[np.ndarray]) -> bool:
     return frame is not None and frame.size > 0 and float(frame.max()) > 10
 
 
-def open_camera(preferred: Optional[int] = None) -> Optional[cv2.VideoCapture]:
-    """Abre la primera cámara disponible que entregue imagen real."""
+class ThreadedCamera:
+    """Captura continua de cámara en hilo dedicado para latencia cero en el bucle principal."""
+
+    def __init__(self, cap: cv2.VideoCapture):
+        self.cap = cap
+        self.lock = threading.Lock()
+        self.running = True
+        self.ret, self.frame = self.cap.read()
+        self.thread = threading.Thread(target=self._capture_worker, daemon=True, name="CameraWorker")
+        self.thread.start()
+
+    def _capture_worker(self) -> None:
+        while self.running:
+            ret, frame = self.cap.read()
+            if ret and frame is not None and frame.size > 0:
+                with self.lock:
+                    self.ret = ret
+                    self.frame = frame
+            else:
+                time.sleep(0.002)
+
+    def read(self) -> Tuple[bool, Optional[np.ndarray]]:
+        with self.lock:
+            if self.frame is not None:
+                return self.ret, self.frame.copy()
+            return False, None
+
+    def is_opened(self) -> bool:
+        return self.running and self.cap.isOpened()
+
+    def isOpened(self) -> bool:
+        return self.running and self.cap.isOpened()
+
+    def get_dimensions(self) -> Tuple[int, int]:
+        w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1280
+        h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
+        return w, h
+
+    def release(self) -> None:
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=0.5)
+        self.cap.release()
+
+    def get(self, prop: int) -> float:
+        return self.cap.get(prop)
+
+    def set(self, prop: int, val: float) -> bool:
+        return self.cap.set(prop, val)
+
+
+def open_camera(preferred: Optional[int] = None) -> Optional[ThreadedCamera]:
+    """Abre la primera cámara disponible con MJPG acelerado y captura desacoplada."""
     indices = [preferred] if preferred is not None else [0, 1, 2]
     backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF)]
     for idx in indices:
@@ -46,8 +98,11 @@ def open_camera(preferred: Optional[int] = None) -> Optional[cv2.VideoCapture]:
             if not cap.isOpened():
                 cap.release()
                 continue
+            # Configurar MJPG a 1280x720 para máxima tasa de cuadros de hardware
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            cap.set(cv2.CAP_PROP_FPS, 60)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             good = False
             for _ in range(30):
@@ -59,8 +114,9 @@ def open_camera(preferred: Optional[int] = None) -> Optional[cv2.VideoCapture]:
             if good:
                 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                logger.info("Cámara #%d (%s) activa: %dx%d", idx, be_name, w, h)
-                return cap
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                logger.info("Cámara #%d (%s) activa: %dx%d @ %.1f FPS (Threaded)", idx, be_name, w, h, fps)
+                return ThreadedCamera(cap)
             cap.release()
     return None
 
@@ -152,8 +208,13 @@ class VisionEngine:
                 threshold=self.cfg.bg_threshold,
             )
         )
-        self.hand_tracker = HandInteractionTracker(task_path=self.cfg.hand_landmarker_path)
-        self.gpu_renderer = GpuHologramRenderer()
+        self.gpu_renderer = GpuHologramRenderer(
+            config=GpuRendererConfig(
+                guided_filter_radius=self.cfg.gf_radius,
+                guided_filter_eps=self.cfg.gf_eps,
+            )
+        )
+        self.hand_tracker = HandInteractionTracker()
 
         # Configurar estado inicial
         with STATE.lock:
@@ -164,19 +225,19 @@ class VisionEngine:
 
     def _resolve_backbone_name(self, model_key: str) -> str:
         k = model_key.lower()
-        if "parse" in k or "human_parse" in k or "yolo26" in k:
-            return "YOLO26-Arm (CUDA - 52 FPS - 88% mAP)"
-        elif "mobilenet" in k or ("rvm" in k and "resnet" not in k):
-            return "RVM MobileNetV3 (CUDA - 60 FPS)"
+        if "mobilenet" in k or ("rvm" in k and "resnet" not in k):
+            return "RVM MobileNetV3 (Segmentación Suave)"
         elif "resnet" in k:
-            return "RVM ResNet50 (CUDA - 30 FPS)"
-        elif "yolo" in k:
-            return "YOLO11-seg (CUDA - 45 FPS)"
+            return "RVM ResNet50 (Alta Precisión)"
+        elif "yolo" in k and "parse" not in k:
+            return "YOLO11-seg (Cuerpo Completo)"
         elif "background" in k or "fondo" in k or "resta" in k:
-            return "Resta de Fondo (GPU/CPU - 60 FPS)"
+            return "Resta de Fondo (Diferencial Ultrarrápido)"
         elif "fastsam" in k:
-            return "FastSAM Point-Prompt (CUDA - 30 FPS)"
-        return "RVM MobileNetV3 (CUDA - 60 FPS)"
+            return "FastSAM-s (Segmentación Guiada)"
+        elif "parse" in k or "human_parse" in k:
+            return "YOLO-Human-Parse (Segmentación Humana)"
+        return "RVM MobileNetV3 (Segmentación Suave)"
 
     def run(
         self,
@@ -277,11 +338,10 @@ class VisionEngine:
                     guided_filter_on = STATE.guided_filter_on
                     bg_thresh = STATE.bg_threshold
 
-                # Actualizar frame crudo
-                _, raw_jpeg = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                # Actualizar fotograma crudo (la codificación JPEG se realiza bajo demanda en server.py)
                 with STATE.lock:
-                    STATE.latest_raw_jpeg = raw_jpeg.tobytes()
-                    STATE.latest_raw_bgr = frame_bgr.copy()
+                    STATE.latest_raw_bgr = frame_bgr
+                    STATE.latest_raw_jpeg = None
 
                 # Tracking de manos con MediaPipe
                 hand_landmarks_list, cur_info = self.hand_tracker.process_frame(frame_rgb)
@@ -294,7 +354,6 @@ class VisionEngine:
                 # Tensor GPU normalizado
                 frame_tensor = torch.from_numpy(frame_rgb).permute(2, 0, 1).unsqueeze(0).to(self.device).float() / 255.0
 
-                # Inferencia desacoplada según el modelo activo (cuerpo completo nativo de alta velocidad)
                 # Inferencia desacoplada según el modelo activo (cuerpo completo nativo de alta velocidad)
                 mode_lower = active_mode.lower()
                 measured_conf = 0.0
@@ -385,6 +444,7 @@ class VisionEngine:
                     fps_timer = time.perf_counter()
 
                 with STATE.lock:
+                    STATE.frame_count += 1
                     STATE.fps = measured_fps
                     STATE.latency_ms = loop_time
                     STATE.confidence = measured_conf
@@ -399,6 +459,7 @@ class VisionEngine:
                         break
         finally:
             cap.release()
+            self.hand_tracker.close()
             if show_gui:
                 cv2.destroyAllWindows()
             with STATE.lock:

@@ -7,7 +7,6 @@ eliminar siluetas de fondo, y extracción orgánica en FastSAM (cero cajas recta
 from __future__ import annotations
 
 import math
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple

@@ -15,7 +15,6 @@ Resta de Fondo:
 """
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,7 +22,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 
 @dataclass

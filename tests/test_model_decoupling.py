@@ -108,3 +108,17 @@ def test_dual_stream_pointer_isolation() -> None:
     decoded_ctrl = cv2.imdecode(np.frombuffer(STATE.latest_controller_jpeg, np.uint8), cv2.IMREAD_COLOR)
     cb, cg, cr = decoded_ctrl[350, 500]
     assert cb > 200 and cg > 200 and cr > 200, "El controlador DEBE tener el centro blanco de la retícula"
+
+
+def test_vision_engine_hand_tracker_lifecycle() -> None:
+    """Verifica que VisionEngine inicialice y cierre hand_tracker sin errores."""
+    from vision_engine.engine import VisionEngine
+    engine = VisionEngine()
+    assert hasattr(engine, "hand_tracker")
+    assert engine.hand_tracker is not None
+    dummy_rgb = np.zeros((720, 1280, 3), dtype=np.uint8)
+    landmarks, cur = engine.hand_tracker.process_frame(dummy_rgb)
+    assert landmarks == []
+    assert cur["detected"] is False
+    engine.hand_tracker.close()
+

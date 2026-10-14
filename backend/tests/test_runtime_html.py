@@ -18,7 +18,7 @@ RUNTIME_HTML = (
 
 @pytest.fixture(scope="module")
 def html() -> str:
-    return RUNTIME_HTML.read_text()
+    return RUNTIME_HTML.read_text(encoding="utf-8")
 
 
 def test_html_file_exists():
@@ -140,7 +140,7 @@ EDITOR_HTML = (
 
 @pytest.fixture(scope="module")
 def editor_html() -> str:
-    return EDITOR_HTML.read_text()
+    return EDITOR_HTML.read_text(encoding="utf-8")
 
 
 def test_editor_has_occluder_checkbox(editor_html: str):
@@ -169,7 +169,7 @@ PROJECTION_HTML = (
 
 @pytest.fixture(scope="module")
 def projection_html() -> str:
-    return PROJECTION_HTML.read_text()
+    return PROJECTION_HTML.read_text(encoding="utf-8")
 
 
 def test_projection_page_polls_draft_endpoint(projection_html: str):
@@ -364,7 +364,7 @@ TUNE_HTML = (
 
 @pytest.fixture(scope="module")
 def tune_html() -> str:
-    return TUNE_HTML.read_text()
+    return TUNE_HTML.read_text(encoding="utf-8")
 
 
 def test_tune_page_has_all_form_fields(tune_html: str):
@@ -412,7 +412,7 @@ TEXT_HTML = (
 
 @pytest.fixture(scope="module")
 def text_html() -> str:
-    return TEXT_HTML.read_text()
+    return TEXT_HTML.read_text(encoding="utf-8")
 
 
 def test_text_page_uses_futura_first(text_html: str):
@@ -472,7 +472,7 @@ TEXT_EDITOR_HTML = (
 
 @pytest.fixture(scope="module")
 def text_editor_html() -> str:
-    return TEXT_EDITOR_HTML.read_text()
+    return TEXT_EDITOR_HTML.read_text(encoding="utf-8")
 
 
 def test_text_editor_has_two_pane_layout(text_editor_html: str):
@@ -611,7 +611,7 @@ def test_text_presets_save_creates_file_and_returns_entry(tmp_path, monkeypatch)
     import json as _json
     p = tmp_path / "data" / "text_presets.json"
     assert p.exists()
-    on_disk = _json.loads(p.read_text())
+    on_disk = _json.loads(p.read_text(encoding="utf-8"))
     assert on_disk[0]["name"] == "intro"
 
 
