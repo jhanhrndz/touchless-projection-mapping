@@ -30,7 +30,7 @@ except Exception:
 class YoloPipelineConfig:
     """Configuración tipada del pipeline de detección YOLO / FastSAM / Human-Parse."""
     yolo_model_path: str = "yolo11n-seg.pt"
-    yolo_parse_model_path: str = "best-kaggle.pt"
+    yolo_parse_model_path: str = "yolo-human-parse.pt"
     fastsam_model_path: str = "FastSAM-s.pt"
     imgsz: int = 640
     conf_base: float = 0.28
@@ -230,11 +230,7 @@ class YoloHumanParseDetector:
             model_p = Path(self.cfg.yolo_parse_model_path)
             if not model_p.exists():
                 search_paths = [
-                    MODELS_DIR / "best-kaggle.pt",
-                    MODELS_DIR / "yolo26n-arm.pt",
                     MODELS_DIR / "yolo-human-parse.pt",
-                    Path(__file__).resolve().parent / "best-kaggle.pt",
-                    Path(__file__).resolve().parent / "yolo26n-arm.pt",
                     Path(__file__).resolve().parent / "yolo-human-parse.pt",
                 ]
                 for sp in search_paths:
@@ -243,8 +239,7 @@ class YoloHumanParseDetector:
                         break
 
             try:
-                fallback = "best-kaggle.pt" if (MODELS_DIR / "best-kaggle.pt").exists() else "yolo26n-arm.pt"
-                self.model = YOLO(str(model_p) if model_p.exists() else fallback)
+                self.model = YOLO(str(model_p) if model_p.exists() else "yolo-human-parse.pt")
                 # Calentamiento inicial rápido de CUDA en segundo plano para evitar congelamiento de 6s
                 if self.device.type == "cuda":
                     dummy_warm = np.zeros((360, 640, 3), dtype=np.uint8)

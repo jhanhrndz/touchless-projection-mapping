@@ -513,6 +513,7 @@
             font-size: 11px;
             color: var(--text-muted);
             overflow-y: auto;
+            scroll-behavior: smooth;
             z-index: 20;
             backdrop-filter: blur(8px);
             box-shadow: 0 4px 15px rgba(0,0,0,0.6);
@@ -588,7 +589,6 @@
                 <option value="rvm_resnet">2. RVM ResNet50 (30 FPS) [Alta Calidad]</option>
                 <option value="yolo">3. YOLO11-seg (45 FPS) [Cuerpo Completo]</option>
                 <option value="background_subtraction">4. Resta de Fondo (60 FPS)</option>
-                <option value="yolo_human_parse">5. YOLO26-Arm (50+ FPS) [Brazos Entrenado - 88% Precisión]</option>
             </select>
 
             <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
@@ -692,6 +692,7 @@
         const svgLayer = document.getElementById('svg-layer');
         const cursorEl = document.getElementById('cursor');
         const pinchAlert = document.getElementById('pinch-alert');
+        const diagDrawer = document.getElementById('diag-drawer');
         const diagLogs = document.getElementById('diag-logs');
         const toast = document.getElementById('toast');
 
@@ -781,7 +782,15 @@
             const time = new Date().toLocaleTimeString().split(' ')[0];
             div.textContent = `[${time}] ${msg}`;
             diagLogs.appendChild(div);
-            diagLogs.scrollTop = diagLogs.scrollHeight;
+            while (diagLogs.children.length > 150) {
+                diagLogs.removeChild(diagLogs.firstChild);
+            }
+            if (diagDrawer) {
+                diagDrawer.scrollTop = diagDrawer.scrollHeight;
+                requestAnimationFrame(() => {
+                    diagDrawer.scrollTop = diagDrawer.scrollHeight;
+                });
+            }
         }
 
         function showToast(msg) {

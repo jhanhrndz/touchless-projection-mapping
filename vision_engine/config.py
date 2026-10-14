@@ -16,13 +16,7 @@ BACKEND_DATA_DIR = ROOT_DIR / "backend" / "data"
 
 # Rutas de modelos predeterminados
 DEFAULT_YOLO_PATH = MODELS_DIR / "yolo11n-seg.pt"
-DEFAULT_YOLO_PARSE_PATH = (
-    (MODELS_DIR / "best-kaggle.pt")
-    if (MODELS_DIR / "best-kaggle.pt").exists()
-    else (MODELS_DIR / "yolo26n-arm.pt")
-    if (MODELS_DIR / "yolo26n-arm.pt").exists()
-    else (MODELS_DIR / "yolo-human-parse.pt")
-)
+DEFAULT_YOLO_PARSE_PATH = MODELS_DIR / "yolo-human-parse.pt"
 DEFAULT_FASTSAM_PATH = MODELS_DIR / "FastSAM-s.pt"
 DEFAULT_TASK_PATH = MODELS_DIR / "hand_landmarker.task"
 OBJECTS_PATH = FRONTEND_DIR / "objects.json" if (FRONTEND_DIR / "objects.json").exists() else (BACKEND_DATA_DIR / "objects.json")
