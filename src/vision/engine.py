@@ -14,7 +14,7 @@ import torch
 
 from .config import EngineConfig, MODELS_DIR
 from .gpu_renderer import GpuHologramRenderer, GpuRendererConfig
-from .hand_tracker import HandInteractionTracker
+from .hand_tracker import HandInteractionTracker, HandTrackerConfig
 from .pipelines.rvm_background import (
     BackgroundSubtractionConfig,
     BackgroundSubtractionProcessor,
@@ -214,7 +214,17 @@ class VisionEngine:
                 guided_filter_eps=self.cfg.gf_eps,
             )
         )
-        self.hand_tracker = HandInteractionTracker()
+        self.hand_tracker = HandInteractionTracker(
+            task_path=self.cfg.hand_landmarker_path,
+            config=HandTrackerConfig(
+                min_detection_confidence=self.cfg.mp_min_detection_conf,
+                min_presence_confidence=self.cfg.mp_min_presence_conf,
+                min_tracking_confidence=self.cfg.mp_min_tracking_conf,
+                pinch_down_px=self.cfg.pinch_down_px,
+                pinch_up_px=self.cfg.pinch_up_px,
+                debounce_frames=self.cfg.pinch_debounce_frames,
+            ),
+        )
 
         # Configurar estado inicial
         with STATE.lock:

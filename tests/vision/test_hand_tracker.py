@@ -119,3 +119,27 @@ def test_hand_interaction_tracker_monotonic_timestamp():
 
     tracker.process_frame(empty_rgb, timestamp_ms=200)
     assert tracker.last_timestamp_ms == 502
+
+
+def test_hysteresis_pinch_detector_high_sensitivity_one_frame():
+    """Verifica que con debounce_frames=1 y umbral 65px la activación sea inmediata en 1 frame."""
+    cfg = PinchConfig(down_threshold_px=65.0, up_threshold_px=85.0, debounce_frames=1)
+    detector = HysteresisPinchDetector(cfg)
+
+    assert not detector.update(100.0)
+    # Activación inmediata en 1 solo frame <= 65px
+    assert detector.update(64.0)
+    # Histéresis: se mantiene activo en zona intermedia
+    assert detector.update(75.0)
+    # Liberación inmediata en 1 solo frame >= 85px
+    assert not detector.update(86.0)
+
+
+def test_hand_tracker_config_custom_thresholds():
+    """Verifica que HandTrackerConfig propague down_px, up_px y debounce_frames a HandInteractionTracker."""
+    cfg = HandTrackerConfig(pinch_down_px=65.0, pinch_up_px=85.0, debounce_frames=1)
+    tracker = HandInteractionTracker(config=cfg)
+
+    assert tracker.pinch_detector.cfg.down_threshold_px == 65.0
+    assert tracker.pinch_detector.cfg.up_threshold_px == 85.0
+    assert tracker.pinch_detector.cfg.debounce_frames == 1

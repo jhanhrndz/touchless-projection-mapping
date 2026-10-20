@@ -145,9 +145,9 @@ class OneEuroFilter2D:
 @dataclass
 class PinchConfig:
     """Configuración del detector de pellizco."""
-    down_threshold_px: float = 58.0   # Umbral inferior para activar clic
-    up_threshold_px: float = 78.0     # Umbral superior para soltar clic
-    debounce_frames: int = 2          # Cuadros consecutivos de confirmación
+    down_threshold_px: float = 65.0   # Umbral inferior para activar clic
+    up_threshold_px: float = 85.0     # Umbral superior para soltar clic
+    debounce_frames: int = 1          # Cuadros consecutivos de confirmación
 
 
 class HysteresisPinchDetector:
@@ -209,8 +209,9 @@ class HandTrackerConfig:
     min_tracking_confidence: float = 0.50
     filter_min_cutoff: float = 1.2
     filter_beta: float = 0.008
-    pinch_down_px: float = 58.0
-    pinch_up_px: float = 78.0
+    pinch_down_px: float = 65.0
+    pinch_up_px: float = 85.0
+    debounce_frames: int = 1
 
 
 class HandInteractionTracker:
@@ -231,7 +232,7 @@ class HandInteractionTracker:
             PinchConfig(
                 down_threshold_px=self.cfg.pinch_down_px,
                 up_threshold_px=self.cfg.pinch_up_px,
-                debounce_frames=2
+                debounce_frames=self.cfg.debounce_frames
             )
         )
         self.detector: Optional[Any] = None

@@ -60,11 +60,14 @@ class EngineConfig:
     # Resta de Fondo
     bg_threshold: int = 35
 
-    # MediaPipe Hand Tracker
+    # MediaPipe Hand Tracker & Gestos
     hand_landmarker_path: Path = DEFAULT_TASK_PATH
     mp_min_detection_conf: float = 0.50
     mp_min_presence_conf: float = 0.50
     mp_min_tracking_conf: float = 0.50
+    pinch_down_px: float = 65.0           # Umbral inferior de activación de clic (calibrado a 65px)
+    pinch_up_px: float = 85.0             # Umbral superior de liberación de clic (85px)
+    pinch_debounce_frames: int = 1        # Cuadros de confirmación (1 para respuesta táctil instantánea)
 
     # Servidor HTTP y Red
     host: str = "0.0.0.0"
@@ -92,6 +95,21 @@ class EngineConfig:
         if "VISION_BG_THRESHOLD" in os.environ:
             try:
                 cfg.bg_threshold = int(os.environ["VISION_BG_THRESHOLD"])
+            except ValueError:
+                pass
+        if "VISION_PINCH_DOWN" in os.environ:
+            try:
+                cfg.pinch_down_px = float(os.environ["VISION_PINCH_DOWN"])
+            except ValueError:
+                pass
+        if "VISION_PINCH_UP" in os.environ:
+            try:
+                cfg.pinch_up_px = float(os.environ["VISION_PINCH_UP"])
+            except ValueError:
+                pass
+        if "VISION_PINCH_DEBOUNCE" in os.environ:
+            try:
+                cfg.pinch_debounce_frames = int(os.environ["VISION_PINCH_DEBOUNCE"])
             except ValueError:
                 pass
         return cfg
