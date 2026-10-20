@@ -55,19 +55,36 @@
             display: block;
         }
 
-
-
         /* Aviso discreto que se desvanece tras 3.5 segundos */
         #init-notice {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            color: rgba(0, 255, 255, 0.4);
-            font-family: monospace;
-            font-size: 13px;
+            top: 24px;
+            left: 24px;
+            color: rgba(0, 242, 254, 0.75);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
             pointer-events: none;
             transition: opacity 1.5s ease;
             z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(10, 15, 25, 0.88);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 242, 254, 0.25);
+            backdrop-filter: blur(8px);
+        }
+        .notice-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 8px #00ff88;
+            display: inline-block;
         }
     </style>
 </head>
@@ -79,7 +96,7 @@
         <!-- Stream Holográfico CUDA (Capa 2) -->
         <img id="cuda-stream" src="/stream" alt="" />
 
-        <div id="init-notice">🖥️ Pantalla Proyector Activa | Presiona [F] o [F11] para Pantalla Completa</div>
+        <div id="init-notice"><span class="notice-dot"></span> Pantalla Proyector Activa · Presiona [F] o [F11] para Pantalla Completa</div>
     </div>
 
     <script>

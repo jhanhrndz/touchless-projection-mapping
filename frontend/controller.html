@@ -5,24 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Centro de Control - Proyección Interactiva Touchless</title>
 
-
     <style>
         :root {
-            --bg-dark: #0a0d13;
-            --panel-bg: rgba(16, 22, 34, 0.94);
-            --border-color: #243048;
+            --bg-canvas: #07090e;
+            --panel-bg: rgba(12, 16, 25, 0.95);
+            --panel-elevated: rgba(16, 23, 38, 0.98);
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-focus: rgba(0, 242, 254, 0.45);
             --accent-cyan: #00f2fe;
             --accent-green: #00ff88;
-            --accent-yellow: #ffd000;
-            --accent-red: #ff3366;
-            --text-main: #e2e8f0;
-            --text-muted: #8492a6;
+            --accent-amber: #f59e0b;
+            --accent-red: #f43f5e;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-dimmed: #64748b;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
 
         body {
-            background-color: var(--bg-dark);
+            background-color: var(--bg-canvas);
             color: var(--text-main);
             overflow: hidden;
             width: 100vw;
@@ -31,94 +39,85 @@
             flex-direction: column;
         }
 
-        /* ── HEADER SUPERIOR ── */
+        /* ── ICONOGRAFÍA SVG DE PRECISIÓN ── */
+        .icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+            stroke-width: 1.75;
+            vertical-align: middle;
+        }
+        .icon-lg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* ── CABECERA DE ESTUDIO PRO-AV ── */
         header {
             background: var(--panel-bg);
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-subtle);
             padding: 0 16px;
-            height: 48px;
-            min-height: 48px;
-            max-height: 48px;
+            height: 50px;
+            min-height: 50px;
+            max-height: 50px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             z-index: 200;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.65);
             flex-wrap: nowrap;
-            gap: 12px;
+            gap: 14px;
             overflow: visible;
+            backdrop-filter: blur(12px);
         }
 
+        /* Zona 1: Identidad de Marca */
         .brand-section {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex-shrink: 0;
             white-space: nowrap;
         }
 
         .brand-logo {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 800;
-            letter-spacing: 0.5px;
-            color: #fff;
-            text-shadow: 0 0 10px var(--accent-cyan);
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: #ffffff;
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .screen-tag {
-            background: rgba(0, 242, 254, 0.15);
-            border: 1px solid var(--accent-cyan);
+        .brand-logo svg {
             color: var(--accent-cyan);
-            font-size: 10px;
+            filter: drop-shadow(0 0 6px rgba(0, 242, 254, 0.6));
+        }
+
+        .screen-tag {
+            background: rgba(0, 242, 254, 0.12);
+            border: 1px solid rgba(0, 242, 254, 0.35);
+            color: var(--accent-cyan);
+            font-size: 9px;
             font-weight: 700;
-            padding: 2px 7px;
+            padding: 2px 6px;
             border-radius: 4px;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
         }
 
-        /* Alerta de Clic / Pellizco flotante desacoplada del flujo de barras */
-        .pinch-alert {
-            position: fixed;
-            top: 54px;
-            left: 50%;
-            transform: translateX(-50%) translateY(-6px) scale(0.92);
-            color: #000;
-            background: var(--accent-yellow);
-            font-weight: 800;
-            font-size: 11px;
-            letter-spacing: 0.5px;
-            padding: 5px 14px;
-            border-radius: 20px;
-            box-shadow: 0 0 18px rgba(255, 208, 0, 0.8), 0 4px 12px rgba(0,0,0,0.6);
-            z-index: 1000;
-            pointer-events: none;
-            opacity: 0;
-            visibility: hidden;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: opacity 0.12s ease, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        .pinch-alert.active {
-            opacity: 1;
-            visibility: visible;
-            transform: translateX(-50%) translateY(0) scale(1);
-            animation: pulse-pinch 0.4s infinite alternate;
-        }
-        @keyframes pulse-pinch {
-            from { transform: translateX(-50%) translateY(0) scale(0.97); opacity: 0.92; }
-            to { transform: translateX(-50%) translateY(0) scale(1.04); opacity: 1; }
-        }
-
-        /* Telemetría Compacta */
+        /* Zona 2: Telemetría de Alta Frecuencia */
         .telemetry-row {
             display: flex;
             align-items: center;
             gap: 6px;
             font-size: 11px;
+            font-variant-numeric: tabular-nums;
             flex-wrap: nowrap;
             flex-shrink: 1;
             overflow: hidden;
@@ -127,28 +126,43 @@
         .stat-badge {
             display: flex;
             align-items: center;
-            gap: 5px;
-            background: rgba(0,0,0,0.45);
-            border: 1px solid #1f293d;
-            padding: 3px 8px;
-            border-radius: 6px;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid var(--border-subtle);
+            padding: 4px 9px;
+            border-radius: 5px;
             white-space: nowrap;
             flex-shrink: 0;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .stat-badge span {
+            font-variant-numeric: tabular-nums;
         }
 
         .stat-dot {
             width: 7px;
             height: 7px;
             border-radius: 50%;
-            background: #475569;
-            transition: all 0.3s;
+            background: var(--text-dimmed);
+            transition: all 0.25s ease;
+            flex-shrink: 0;
         }
-        .stat-dot.online { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
-        .stat-dot.offline { background: var(--accent-red); }
-        .stat-dot.active { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan); }
-        .stat-dot.pinch { background: var(--accent-yellow); box-shadow: 0 0 12px var(--accent-yellow); }
+        .stat-dot.online {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+        .stat-dot.offline {
+            background: var(--accent-red);
+        }
+        .stat-dot.active {
+            background: var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan);
+        }
 
-        /* Controles agrupados */
+        /* Zona 3: Deck de Controles */
         .controls-group {
             display: flex;
             align-items: center;
@@ -158,28 +172,28 @@
         }
 
         select.model-dropdown {
-            background: #141b2a;
-            color: #fff;
-            border: 1px solid var(--accent-cyan);
-            border-radius: 6px;
+            background: #0f1624;
+            color: #ffffff;
+            border: 1px solid var(--border-focus);
+            border-radius: 5px;
             padding: 6px 12px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
             outline: none;
-            box-shadow: 0 0 8px rgba(0, 242, 254, 0.25);
+            box-shadow: 0 0 10px rgba(0, 242, 254, 0.15);
             transition: border-color 0.2s, box-shadow 0.2s;
         }
         select.model-dropdown:hover {
-            border-color: #fff;
-            box-shadow: 0 0 14px rgba(0, 242, 254, 0.5);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 14px rgba(0, 242, 254, 0.35);
         }
 
         .btn {
-            background: #192236;
+            background: #121929;
             color: var(--text-main);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 5px;
             padding: 6px 12px;
             font-size: 12px;
             font-weight: 600;
@@ -187,117 +201,83 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 7px;
             text-decoration: none;
             box-sizing: border-box;
             line-height: 1.2;
-            transition: all 0.2s;
+            transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
             user-select: none;
+            white-space: nowrap;
         }
         .btn:hover {
-            background: #232f4a;
-            border-color: var(--accent-cyan);
-            color: #fff;
+            background: #1b263d;
+            border-color: var(--border-focus);
+            color: #ffffff;
             transform: translateY(-1px);
         }
-        .btn.micro {
-            padding: 3px 6px;
-            font-size: 10px;
-            font-family: monospace;
-            flex: 1;
-            justify-content: center;
-            background: #111722;
+        .btn:active {
+            transform: translateY(0);
         }
         .btn.primary {
-            background: linear-gradient(135deg, #0088cc, #00d2ff);
-            color: #000;
+            background: linear-gradient(135deg, #0284c7, #00d2ff);
+            color: #07090e;
             border: none;
             font-weight: 700;
-            box-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+            box-shadow: 0 0 12px rgba(0, 210, 255, 0.35);
         }
         .btn.primary:hover {
-            background: linear-gradient(135deg, #0099e6, #33dcff);
-            box-shadow: 0 0 16px rgba(0, 210, 255, 0.7);
+            background: linear-gradient(135deg, #0396de, #38e1ff);
+            box-shadow: 0 0 18px rgba(0, 210, 255, 0.65);
+            color: #000;
         }
         .btn:disabled, .btn[disabled] {
-            opacity: 0.45;
+            opacity: 0.35;
             cursor: not-allowed;
             pointer-events: none;
         }
 
-        /* Estilos específicos para enlaces de gestión del Backend */
         .btn-backend-header {
-            background: rgba(0, 242, 254, 0.12);
-            border: 1px solid rgba(0, 242, 254, 0.45);
+            background: rgba(0, 242, 254, 0.08);
+            border: 1px solid rgba(0, 242, 254, 0.3);
             color: var(--accent-cyan);
-            font-weight: 700;
-            box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
-        }
-        .btn-backend-header:hover {
-            background: rgba(0, 242, 254, 0.26);
-            border-color: #00f2fe;
-            color: #fff;
-            box-shadow: 0 0 14px rgba(0, 242, 254, 0.55);
-            transform: translateY(-1px);
-        }
-
-        .btn-backend-popover {
-            background: #142035;
-            border: 1px solid #293b5a;
-            color: #c0d4f5;
-            padding: 7px 10px;
-            font-size: 11px;
             font-weight: 600;
         }
-        .btn-backend-popover:hover {
-            background: #1c2d4a;
+        .btn-backend-header:hover {
+            background: rgba(0, 242, 254, 0.2);
             border-color: var(--accent-cyan);
             color: #fff;
-            box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
-            transform: translateY(-1px);
-        }
-        .btn-backend-popover.highlight {
-            background: rgba(0, 242, 254, 0.15);
-            border-color: var(--accent-cyan);
-            color: var(--accent-cyan);
-            font-weight: 700;
-        }
-        .btn-backend-popover.highlight:hover {
-            background: rgba(0, 242, 254, 0.30);
-            color: #fff;
-            box-shadow: 0 0 14px rgba(0, 242, 254, 0.6);
+            box-shadow: 0 0 12px rgba(0, 242, 254, 0.4);
         }
 
-        /* ── MENÚ DESPLEGABLE DE AJUSTES Y VIDEO DE FONDO ── */
+        /* ── MENÚ DESPLEGABLE DE AJUSTES (POPOVER) ── */
         .dropdown-wrapper {
             position: relative;
             display: inline-block;
         }
 
         button.settings-btn {
-            background: #141f33;
-            border-color: #2b3e63;
-            color: #d1dcfa;
-            font-weight: 700;
+            background: #121929;
+            border-color: var(--border-subtle);
+            color: var(--text-main);
         }
         button.settings-btn:hover, button.settings-btn.active {
-            background: #1d2c47;
+            background: #1a253a;
             border-color: var(--accent-cyan);
             color: #fff;
-            box-shadow: 0 0 12px rgba(0, 242, 254, 0.35);
+            box-shadow: 0 0 12px rgba(0, 242, 254, 0.25);
         }
 
         .settings-popover {
             position: absolute;
             top: calc(100% + 8px);
             right: 0;
-            width: 370px;
-            max-width: min(370px, calc(100vw - 32px));
-            background: rgba(14, 20, 32, 0.98);
-            border: 1px solid #293a5a;
-            border-radius: 10px;
-            box-shadow: 0 16px 45px rgba(0, 0, 0, 0.95), 0 0 14px rgba(0, 242, 254, 0.25);
-            backdrop-filter: blur(16px);
+            width: 380px;
+            max-width: min(380px, calc(100vw - 32px));
+            background: var(--panel-elevated);
+            border: 1px solid rgba(0, 242, 254, 0.22);
+            border-radius: 8px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.95), 0 0 16px rgba(0, 242, 254, 0.15);
+            backdrop-filter: blur(20px);
             padding: 16px;
             z-index: 250;
             display: none;
@@ -305,7 +285,6 @@
             gap: 14px;
             animation: popoverFadeIn 0.15s ease-out;
         }
-
         .settings-popover.open {
             display: flex;
         }
@@ -318,8 +297,8 @@
         .popover-section {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            gap: 9px;
+            border-bottom: 1px solid var(--border-subtle);
             padding-bottom: 12px;
         }
         .popover-section:last-child {
@@ -328,14 +307,20 @@
         }
 
         .section-title {
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.8px;
             color: var(--accent-cyan);
             display: flex;
             align-items: center;
             justify-content: space-between;
+        }
+
+        .section-title-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .section-row {
@@ -350,35 +335,56 @@
             align-items: center;
             justify-content: space-between;
             background: rgba(0, 0, 0, 0.35);
-            border: 1px solid #1a253a;
-            border-radius: 6px;
-            padding: 6px 10px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 5px;
+            padding: 7px 10px;
             font-size: 11px;
             color: var(--text-muted);
+            gap: 8px;
         }
         .slider-row input[type="range"] {
             flex: 1;
-            margin: 0 10px;
+            margin: 0 6px;
             cursor: pointer;
-            accent-color: var(--accent-cyan);
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            background: #1e293b;
+            border-radius: 2px;
+            outline: none;
+        }
+        .slider-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .slider-row input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
         }
         .slider-val {
-            font-family: monospace;
+            font-family: ui-monospace, monospace;
             font-weight: 700;
             color: var(--accent-cyan);
             min-width: 44px;
             text-align: right;
+            font-variant-numeric: tabular-nums;
         }
 
         .badge-tag {
-            font-size: 11px;
-            font-family: monospace;
-            padding: 4px 8px;
+            font-size: 10px;
+            font-family: ui-monospace, monospace;
+            padding: 3px 7px;
             border-radius: 4px;
-            background: #141b28;
-            color: var(--text-muted);
-            border: 1px solid #1f2a3f;
-            max-width: 100%;
+            background: #0f1624;
+            color: var(--text-dimmed);
+            border: 1px solid var(--border-subtle);
+            max-width: 160px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -386,17 +392,78 @@
         .badge-tag.active {
             color: var(--accent-green);
             border-color: rgba(0, 255, 136, 0.4);
-            background: rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.08);
+        }
+
+        .btn-backend-popover {
+            background: #10192a;
+            border: 1px solid #1f2c44;
+            color: #cbd5e1;
+            padding: 7px 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .btn-backend-popover:hover {
+            background: #17243b;
+            border-color: var(--accent-cyan);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(0, 242, 254, 0.25);
+            transform: translateY(-1px);
+        }
+        .btn-backend-popover.highlight {
+            background: rgba(0, 242, 254, 0.1);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-weight: 700;
         }
 
         .keyboard-shortcuts {
             font-size: 10px;
-            color: #64748b;
-            line-height: 1.4;
-            background: rgba(0, 0, 0, 0.25);
-            padding: 6px 8px;
-            border-radius: 4px;
-            border: 1px dashed #1e293b;
+            color: var(--text-dimmed);
+            line-height: 1.5;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px 10px;
+            border-radius: 5px;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            font-family: ui-monospace, monospace;
+        }
+        .keyboard-shortcuts b {
+            color: var(--text-muted);
+        }
+
+        /* ── INDICADOR TÁCTICO HUD DE CLIC / PELLIZCO ── */
+        .pinch-alert {
+            position: fixed;
+            top: 58px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-6px) scale(0.94);
+            color: #07090e;
+            background: var(--accent-amber);
+            font-weight: 800;
+            font-size: 11px;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            padding: 5px 14px;
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.75), 0 4px 12px rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            transition: opacity 0.12s ease, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .pinch-alert.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0) scale(1);
+            animation: pulse-pinch 0.4s infinite alternate;
+        }
+        @keyframes pulse-pinch {
+            from { transform: translateX(-50%) translateY(0) scale(0.98); opacity: 0.94; }
+            to { transform: translateX(-50%) translateY(0) scale(1.02); opacity: 1; }
         }
 
         /* ── ÁREA DE TRABAJO 1920x1080 ── */
@@ -408,7 +475,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #000;
+            background: #000000;
             overflow: hidden;
         }
 
@@ -417,13 +484,12 @@
             width: 1920px;
             height: 1080px;
             transform-origin: center center;
-            background: #05070a;
-            border: 1px solid #1a2333;
-            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            background: #04060a;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.95);
             overflow: hidden;
         }
 
-        /* Video de fondo para preview en controlador */
         #ctrl-bg-video {
             position: absolute;
             top: 0;
@@ -436,7 +502,6 @@
             filter: brightness(70%);
         }
 
-        /* Stream en vivo CUDA */
         #stream-view {
             position: absolute;
             top: 0;
@@ -448,174 +513,381 @@
             background: transparent;
             mix-blend-mode: screen;
             opacity: 0.95;
-            display: block;
         }
 
-
-        /* Capa SVG para figuras interactivas de objects.json */
-        svg#svg-layer {
+        #svg-layer {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 5;
+            z-index: 10;
             pointer-events: none;
         }
 
-        .target-poly {
+        polygon.target-poly {
             fill: rgba(0, 242, 254, 0.08);
-            stroke: rgba(0, 242, 254, 0.45);
+            stroke: var(--accent-cyan);
             stroke-width: 2.5;
-            stroke-linejoin: round;
-            transition: fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+            transition: fill 0.15s ease, stroke 0.15s ease, filter 0.15s ease;
+            cursor: pointer;
         }
-        .target-poly.hover {
-            fill: rgba(0, 242, 254, 0.32);
-            stroke: #00f2fe;
-            stroke-width: 4.5;
-            filter: drop-shadow(0 0 14px #00f2fe);
-        }
-        .target-poly.active {
-            fill: rgba(0, 255, 136, 0.7);
+        polygon.target-poly.hover {
+            fill: rgba(0, 242, 254, 0.35);
             stroke: #ffffff;
-            stroke-width: 6.5;
+            stroke-width: 4.5;
+            filter: drop-shadow(0 0 15px rgba(0, 242, 254, 0.8));
+        }
+        polygon.target-poly.active {
+            fill: rgba(0, 255, 136, 0.65);
+            stroke: #ffffff;
+            stroke-width: 6;
             filter: drop-shadow(0 0 25px #00ff88);
         }
 
         .poly-tag {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 700;
             fill: var(--accent-cyan);
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
             pointer-events: none;
             text-shadow: 0 0 8px rgba(0,0,0,0.9);
         }
 
-        /* Puntero reticular del dedo índice (sincronizado al 100% en el stream de video) */
         #cursor {
             display: none !important;
             pointer-events: none;
         }
 
-        /* Consola de diagnóstico */
+        /* ── CONSOLA DE DIAGNÓSTICO ESTUDIO (SCROLLBAR CUSTOM) ── */
         #diag-drawer {
             position: absolute;
-            bottom: 12px;
-            left: 12px;
-            width: 440px;
-            max-height: 140px;
-            background: rgba(8, 12, 19, 0.88);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 8px 12px;
-            font-family: monospace;
-            font-size: 11px;
-            color: var(--text-muted);
+            bottom: 14px;
+            left: 14px;
+            width: 460px;
+            max-height: 165px;
+            background: rgba(10, 14, 23, 0.9);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+            overflow: hidden;
+            transition: max-height 0.2s ease, opacity 0.2s ease;
+        }
+        #diag-drawer.minimized {
+            max-height: 32px;
+            overflow: hidden;
+        }
+
+        .diag-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(16, 23, 38, 0.75);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 6px 10px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--text-dimmed);
+            user-select: none;
+        }
+
+        .diag-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .diag-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 6px var(--accent-cyan);
+        }
+
+        .diag-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .diag-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dimmed);
+            font-size: 10px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: color 0.15s, background 0.15s;
+        }
+        .diag-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        #diag-logs-container {
+            padding: 8px 10px;
             overflow-y: auto;
             scroll-behavior: smooth;
-            z-index: 20;
-            backdrop-filter: blur(8px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            flex: 1;
+            max-height: 130px;
+            font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--text-muted);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0, 242, 254, 0.25) rgba(0, 0, 0, 0.25);
         }
-        .log-line { margin-bottom: 2px; line-height: 1.3; }
-        .log-line.info { color: var(--accent-cyan); }
-        .log-line.success { color: var(--accent-green); }
-        .log-line.warn { color: var(--accent-yellow); }
-        .log-line.error { color: var(--accent-red); font-weight: bold; }
 
-        /* Toast flotante */
+        /* Reglas WebKit para Scrollbar Ultra-Fina */
+        #diag-logs-container::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        #diag-logs-container::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 4px;
+        }
+        #diag-logs-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 242, 254, 0.22);
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        #diag-logs-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 242, 254, 0.55);
+        }
+
+        .log-line {
+            margin-bottom: 3px;
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            word-break: break-all;
+        }
+        .log-time {
+            color: var(--text-dimmed);
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+        .log-tag {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+            line-height: 1.2;
+        }
+        .log-tag.tag-info {
+            background: rgba(0, 242, 254, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 242, 254, 0.25);
+        }
+        .log-tag.tag-success {
+            background: rgba(0, 255, 136, 0.12);
+            color: var(--accent-green);
+            border: 1px solid rgba(0, 255, 136, 0.25);
+        }
+        .log-tag.tag-warn {
+            background: rgba(245, 158, 11, 0.12);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+        }
+        .log-tag.tag-error {
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            font-weight: 800;
+        }
+        .log-text {
+            color: var(--text-main);
+            flex: 1;
+        }
+
+        /* ── TOAST NOTIFICATION ── */
         #toast {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #142035;
+            top: 16px;
+            right: 16px;
+            background: #0f1624;
             border: 1px solid var(--accent-cyan);
-            color: #fff;
+            color: #ffffff;
             padding: 8px 16px;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.65), 0 0 10px rgba(0, 242, 254, 0.2);
             opacity: 0;
             transform: translateY(-6px);
-            transition: all 0.2s ease;
+            transition: opacity 0.2s ease, transform 0.2s ease;
             z-index: 60;
+            pointer-events: none;
         }
-        #toast.show { opacity: 1; transform: translateY(0); }
+        #toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ── RESPONSIVE MEDIA QUERIES ── */
+        @media (max-width: 1366px) {
+            header {
+                padding: 0 10px;
+                gap: 8px;
+            }
+            .brand-logo span.brand-text {
+                display: none;
+            }
+            .stat-badge {
+                padding: 3px 6px;
+                font-size: 10px;
+            }
+            .btn {
+                padding: 5px 8px;
+                font-size: 11px;
+            }
+        }
+
+        @media (max-width: 1120px) {
+            .btn span.btn-text {
+                display: none;
+            }
+            .btn {
+                padding: 6px 9px;
+            }
+            #precision-badge, #gpu-badge {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
 
-    <!-- ── BARRA SUPERIOR ── -->
+    <!-- ── BARRA SUPERIOR PRO-AV ── -->
     <header>
-        <!-- SECCIÓN IZQUIERDA: MARCA -->
+        <!-- ZONA 1: IDENTIDAD Y SISTEMA -->
         <div class="brand-section">
-            <div class="brand-logo">
-                <span>⚡ PROYECCIÓN</span>
-                <span class="screen-tag">CONTROL</span>
+            <div class="brand-logo" title="Touchless Projection Mapping System">
+                <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                    <polyline points="2 17 12 22 22 17"/>
+                    <polyline points="2 12 12 17 22 12"/>
+                </svg>
+                <span class="brand-text">Touchless Studio</span>
+                <span class="screen-tag">v2.0</span>
             </div>
         </div>
 
-        <!-- SECCIÓN CENTRAL: TELEMETRÍA -->
+        <!-- ZONA 2: TELEMETRÍA EN TIEMPO REAL -->
         <div class="telemetry-row">
-            <div class="stat-badge" title="Estado de conexión con el Backend">
+            <div class="stat-badge" title="Estado de conexión con Backend IoT (puerto 8000)">
                 <span id="ws-dot" class="stat-dot offline"></span>
                 <span id="ws-label">Backend</span>
             </div>
-            <div class="stat-badge" title="Estado del Proyector">
+            <div class="stat-badge" title="Estado de la ventana de proyección física">
                 <span id="proj-dot" class="stat-dot offline"></span>
                 <span id="proj-label">Proyector</span>
             </div>
-            <div class="stat-badge" title="Cuadros por segundo">
+            <div class="stat-badge" title="Cadencia de fotogramas por segundo">
                 <span id="cam-dot" class="stat-dot active"></span>
                 <span id="fps-label">0.0 FPS</span>
             </div>
-            <div class="stat-badge" id="latency-badge" title="Latencia del pipeline de visión">
+            <div class="stat-badge" id="latency-badge" title="Latencia del ciclo de visión en GPU">
                 <span>0.0 ms</span>
             </div>
-            <div class="stat-badge" id="precision-badge" style="color: var(--accent-cyan);" title="Certeza del modelo">
+            <div class="stat-badge" id="precision-badge" style="color: var(--accent-cyan);" title="Certeza de detección del modelo">
                 <span>Precisión: --%</span>
             </div>
-            <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);" title="GPU activa">
+            <div class="stat-badge" id="gpu-badge" style="color: var(--accent-green);" title="Dispositivo acelerador de cómputo">
                 <span>GPU</span>
             </div>
         </div>
 
-        <!-- SECCIÓN DERECHA: CONTROLES AGRUPADOS -->
+        <!-- ZONA 3: DECK DE CONTROLES -->
         <div class="controls-group">
             <select id="model-select" class="model-dropdown" title="Seleccionar motor de segmentación neuronal o matemático">
-                <option value="rvm_mobilenet">1. RVM MobileNetV3 (Tiempo Real / Balanceado) [Recomendado]</option>
-                <option value="rvm_resnet">2. RVM ResNet50 (Máxima Fidelidad / Red Profunda)</option>
-                <option value="yolo">3. YOLO11-seg (Segmentación Corporal Robusta)</option>
+                <option value="rvm_mobilenet">1. RVM MobileNetV3 (Equilibrado / Recomendado)</option>
+                <option value="rvm_resnet">2. RVM ResNet50 (Alta Precisión)</option>
+                <option value="yolo">3. YOLO11-seg (Instancias Corporales)</option>
                 <option value="background_subtraction">4. Resta de Fondo (Ultraligero / Sin IA)</option>
             </select>
 
-            <button id="calibrate-btn" class="btn" style="background: rgba(255, 208, 0, 0.15); border-color: var(--accent-yellow); color: var(--accent-yellow);" title="Capturar fotograma de fondo limpio (Espacio o tecla C)">📸 Calibrar</button>
-            <button id="open-proj-btn" class="btn primary" title="Abrir ventana para el proyector de pared">🖥️ Proyector</button>
-            <a id="header-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-header" title="Abrir Editor de Figuras del Backend (puerto 8000)">✏️ Editor</a>
+            <button id="calibrate-btn" class="btn" style="background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4); color: var(--accent-amber);" title="Capturar fotograma de fondo limpio (Atajo: Espacio o tecla C)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>
+                </svg>
+                <span class="btn-text">Calibrar</span>
+            </button>
 
-            <!-- MENÚ DESPLEGABLE DE AJUSTES Y VIDEO -->
+            <button id="open-proj-btn" class="btn primary" title="Abrir ventana para pantalla extendida del proyector">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                <span class="btn-text">Proyector</span>
+            </button>
+
+            <a id="header-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-header" title="Abrir Editor de Figuras del Backend (puerto 8000)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                <span class="btn-text">Editor</span>
+            </a>
+
+            <!-- MENÚ DESPLEGABLE DE AJUSTES -->
             <div class="dropdown-wrapper">
-                <button id="settings-menu-btn" class="btn settings-btn" title="Ajustes de proyección, video de fondo y calibración de puntero">
-                    ⚙️ Ajustes ▾
+                <button id="settings-menu-btn" class="btn settings-btn" title="Ajustes de video de fondo, shaders y escena">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+                    </svg>
+                    <span class="btn-text">Ajustes</span>
                 </button>
 
                 <div id="settings-popover" class="settings-popover">
                     <!-- SECCIÓN 1: VIDEO DE FONDO -->
                     <div class="popover-section">
                         <div class="section-title">
-                            <span>🎬 Video de Fondo para Mapeo</span>
+                            <div class="section-title-left">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
+                                </svg>
+                                <span>Video de Fondo Dinámico</span>
+                            </div>
                             <span id="video-status-badge" class="badge-tag">Sin video activo</span>
                         </div>
                         <input type="file" id="bg-video-input" accept="video/mp4,video/webm,video/ogg" style="display: none;">
                         <div class="section-row">
-                            <button id="load-video-btn" class="btn" style="flex: 1;">📁 Cargar Video</button>
-                            <button id="toggle-video-btn" class="btn" disabled title="Pausar / Reanudar video en proyector">⏯️ Pausar</button>
-                            <button id="clear-video-btn" class="btn" disabled title="Quitar video de fondo">🗑️ Quitar</button>
+                            <button id="load-video-btn" class="btn" style="flex: 1;">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                </svg>
+                                <span>Cargar Video</span>
+                            </button>
+                            <button id="toggle-video-btn" class="btn" disabled title="Pausar / Reanudar video en proyector">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="5 3 19 12 5 21 5 3"/>
+                                </svg>
+                                <span>Pausar</span>
+                            </button>
+                            <button id="clear-video-btn" class="btn" disabled title="Quitar video de fondo">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                                <span>Quitar</span>
+                            </button>
                         </div>
                         <div class="slider-row" title="Ajustar brillo del video para máxima legibilidad óptica del brazo holográfico">
-                            <span>☀️ Brillo:</span>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                                </svg>
+                                <span>Brillo:</span>
+                            </div>
                             <input type="range" id="video-brightness" min="10" max="100" value="70">
                             <span id="brightness-val" class="slider-val">70%</span>
                         </div>
@@ -624,32 +896,58 @@
                     <!-- SECCIÓN 2: CALIDAD DE RENDERIZADO Y BORDES -->
                     <div class="popover-section">
                         <div class="section-title">
-                            <span>✨ Calidad de Renderizado y Bordes</span>
+                            <div class="section-title-left">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                                </svg>
+                                <span>Filtros de Renderizado GPU</span>
+                            </div>
                         </div>
                         <div class="section-row">
-                            <button id="gf-toggle-btn" class="btn" style="flex: 1;" title="Alternar Fast Guided Filter para suavizado fino de bordes (Tecla G)">✨ Guided Filter (Suavizado)</button>
+                            <button id="gf-toggle-btn" class="btn" style="flex: 1;" title="Alternar Fast Guided Filter para suavizado fino de bordes (Tecla G)">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                </svg>
+                                <span>Fast Guided Filter (Suavizado de Bordes)</span>
+                            </button>
                         </div>
                     </div>
 
                     <!-- SECCIÓN 3: GESTIÓN DE FIGURAS Y BACKEND -->
                     <div class="popover-section">
                         <div class="section-title">
-                            <span>📦 Figuras Interactivas (Backend)</span>
+                            <div class="section-title-left">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+                                </svg>
+                                <span>Figuras Interactivas (Backend)</span>
+                            </div>
                             <span class="badge-tag" style="color: var(--accent-cyan); border-color: rgba(0, 242, 254, 0.35);">Puerto 8000</span>
                         </div>
                         <div class="section-row" style="gap: 8px; margin-bottom: 6px;">
                             <a id="popover-editor-link" href="http://localhost:8000/editor" target="_blank" class="btn btn-backend-popover highlight" style="flex: 1;" title="Abrir editor de figuras y mapeo de dispositivos">
-                                ✏️ Editor (8000)
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                                </svg>
+                                <span>Editor (8000)</span>
                             </a>
                             <a id="popover-proj-editor-link" href="http://localhost:8000/editor/projection" target="_blank" class="btn btn-backend-popover" style="flex: 1;" title="Abrir vista de proyección 1:1 del editor">
-                                📐 Vista Proyección
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+                                </svg>
+                                <span>Vista Proyección</span>
                             </a>
                         </div>
                         <div class="section-row">
-                            <button id="reload-obj-btn" class="btn" style="width: 100%;" title="Recargar figuras interactivas desde objects.json">🔄 Recargar Figuras en Escena</button>
+                            <button id="reload-obj-btn" class="btn" style="width: 100%;" title="Recargar figuras interactivas desde config/objects.json">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                </svg>
+                                <span>Recargar Figuras en Escena</span>
+                            </button>
                         </div>
                         <div class="keyboard-shortcuts">
-                            <b>Atajos:</b> [Espacio/C] Calibrar Fondo · [B] Siguiente IA · [G] Guided Filter · [V] Video
+                            <b>ATAJOS:</b> [Espacio/C] Calibrar Fondo · [B] Siguiente IA · [G] Guided Filter · [V] Video
                         </div>
                     </div>
                 </div>
@@ -657,8 +955,13 @@
         </div>
     </header>
 
-    <!-- Indicador de Clic Flotante (no afecta el layout ni las barras) -->
-    <div class="pinch-alert" id="pinch-alert">🤌 CLIC PELLIZCO</div>
+    <!-- Indicador Táctico HUD de Clic Flotante -->
+    <div class="pinch-alert" id="pinch-alert">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="1" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="23" y2="12"/>
+        </svg>
+        <span>INTERACCIÓN ACTIVA</span>
+    </div>
 
     <!-- ── ESCENARIO 1920x1080 ── -->
     <div id="workspace-stage">
@@ -673,9 +976,21 @@
             <div id="cursor"></div>
         </div>
 
-        <!-- Consola de diagnóstico -->
+        <!-- Consola de Telemetría y Diagnóstico con Scrollbar Custom -->
         <div id="diag-drawer">
-            <div id="diag-logs"></div>
+            <div class="diag-header">
+                <div class="diag-title">
+                    <span class="diag-dot"></span>
+                    <span>TELEMETRÍA DE EVENTOS</span>
+                </div>
+                <div class="diag-actions">
+                    <button id="clear-logs-btn" class="diag-btn" title="Limpiar historial de eventos">Limpiar</button>
+                    <button id="toggle-logs-btn" class="diag-btn" title="Minimizar / Expandir consola">_</button>
+                </div>
+            </div>
+            <div id="diag-logs-container">
+                <div id="diag-logs"></div>
+            </div>
         </div>
 
         <div id="toast"></div>
@@ -693,7 +1008,10 @@
         const cursorEl = document.getElementById('cursor');
         const pinchAlert = document.getElementById('pinch-alert');
         const diagDrawer = document.getElementById('diag-drawer');
+        const diagLogsContainer = document.getElementById('diag-logs-container');
         const diagLogs = document.getElementById('diag-logs');
+        const clearLogsBtn = document.getElementById('clear-logs-btn');
+        const toggleLogsBtn = document.getElementById('toggle-logs-btn');
         const toast = document.getElementById('toast');
 
         const wsDot = document.getElementById('ws-dot');
@@ -715,6 +1033,7 @@
         // Menú Desplegable de Ajustes
         const settingsMenuBtn = document.getElementById('settings-menu-btn');
         const settingsPopover = document.getElementById('settings-popover');
+
         // Limpiar cualquier offset residual para garantizar anclaje puro al dedo
         localStorage.removeItem('cursor_scale_x');
         localStorage.removeItem('cursor_offset_x');
@@ -736,6 +1055,21 @@
                     settingsPopover.classList.remove('open');
                     settingsMenuBtn.classList.remove('active');
                 }
+            });
+        }
+
+        // Acciones de la consola de diagnóstico
+        if (clearLogsBtn && diagLogs) {
+            clearLogsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                diagLogs.innerHTML = '';
+            });
+        }
+        if (toggleLogsBtn && diagDrawer) {
+            toggleLogsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isMini = diagDrawer.classList.toggle('minimized');
+                toggleLogsBtn.textContent = isMini ? '□' : '_';
             });
         }
 
@@ -767,7 +1101,7 @@
         // Autoescalado responsivo aprovechando todo el lienzo del monitor
         function resizeViewport() {
             const header = document.querySelector('header');
-            const headerH = header ? header.offsetHeight : 48;
+            const headerH = header ? header.offsetHeight : 50;
             const availW = window.innerWidth;
             const availH = window.innerHeight - headerH - 2;
             const scale = Math.min(availW / 1920, availH / 1080);
@@ -776,19 +1110,39 @@
         window.addEventListener('resize', resizeViewport);
         resizeViewport();
 
+        // Formato estructurado y profesional para la consola de logs
         function log(msg, type = 'info') {
             const div = document.createElement('div');
-            div.className = `log-line ${type}`;
-            const time = new Date().toLocaleTimeString().split(' ')[0];
-            div.textContent = `[${time}] ${msg}`;
+            div.className = 'log-line';
+
+            const now = new Date();
+            const time = now.toTimeString().split(' ')[0];
+
+            let tag = 'SYS';
+            if (type === 'success') tag = 'OK';
+            else if (type === 'warn') tag = 'WARN';
+            else if (type === 'error') tag = 'ERR';
+
+            // Limpieza de cualquier emoji residual en mensajes
+            const cleanMsg = msg.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|✓/gu, '').trim();
+
+            div.innerHTML = `
+                <span class="log-time">${time}</span>
+                <span class="log-tag tag-${type}">${tag}</span>
+                <span class="log-text">${cleanMsg}</span>
+            `;
+
             diagLogs.appendChild(div);
+
             while (diagLogs.children.length > 150) {
                 diagLogs.removeChild(diagLogs.firstChild);
             }
-            if (diagDrawer) {
-                diagDrawer.scrollTop = diagDrawer.scrollHeight;
+
+            const targetScroll = diagLogsContainer || diagDrawer;
+            if (targetScroll) {
+                targetScroll.scrollTop = targetScroll.scrollHeight;
                 requestAnimationFrame(() => {
-                    diagDrawer.scrollTop = diagDrawer.scrollHeight;
+                    targetScroll.scrollTop = targetScroll.scrollHeight;
                 });
             }
         }
@@ -806,7 +1160,7 @@
         function handleProjectionReady() {
             projDot.className = 'stat-dot online';
             projLabel.textContent = 'Proyector: OK';
-            log('✓ Ventana de proyección conectada en tiempo real', 'success');
+            log('Ventana de proyección vinculada en tiempo real', 'success');
             showToast('Proyector conectado');
 
             // Sincronizar video de fondo activo inmediatamente
@@ -885,7 +1239,7 @@
                     const data = req.result;
                     if (data && data.blob) {
                         applyBgVideo(data.blob, data.name || 'Video de Fondo', data.brightness || 70, false);
-                        log(`🎬 Video de fondo restaurado automáticamente: ${data.name || 'Video'}`, 'info');
+                        log(`Video de fondo restaurado automáticamente: ${data.name || 'Video'}`, 'info');
                     }
                 };
             } catch (e) {
@@ -942,7 +1296,7 @@
             if (!file) return;
             applyBgVideo(file, file.name, currentBgBrightness, true);
             const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-            log(`🎬 Video de fondo cargado: ${file.name} (${sizeMb} MB)`, 'success');
+            log(`Video de fondo cargado: ${file.name} (${sizeMb} MB)`, 'success');
             showToast(`Video cargado: ${file.name}`);
         };
 
@@ -956,7 +1310,7 @@
             }
             primaryChannel.postMessage({ type: 'toggle_bg_video' });
             legacyChannel.postMessage({ type: 'toggle_bg_video' });
-            log(`🎬 Video de fondo ${isBgVideoPlaying ? 'reanudado' : 'pausado'}`);
+            log(`Video de fondo ${isBgVideoPlaying ? 'reanudado' : 'pausado'}`);
         };
 
         clearVideoBtn.onclick = () => {
@@ -980,7 +1334,7 @@
 
             primaryChannel.postMessage({ type: 'clear_bg_video' });
             legacyChannel.postMessage({ type: 'clear_bg_video' });
-            log('🎬 Video de fondo retirado');
+            log('Video de fondo retirado');
             showToast('Video de fondo quitado');
         };
 
@@ -1014,7 +1368,7 @@
                 ws.onopen = () => {
                     wsDot.className = 'stat-dot online';
                     wsLabel.textContent = `Backend (${port}): OK`;
-                    log(`✓ Conectado a Backend WebSocket (puerto ${port})`, 'success');
+                    log(`Conectado a Backend WebSocket (puerto ${port})`, 'success');
                 };
                 ws.onclose = () => {
                     wsDot.className = 'stat-dot offline';
@@ -1033,7 +1387,7 @@
         initWebSocket();
 
         // ─────────────────────────────────────────────────────────────────────
-        //  4. CARGA DE FIGURAS INTERACTIVAS (data/objects.json)
+        //  4. CARGA DE FIGURAS INTERACTIVAS (config/objects.json)
         // ─────────────────────────────────────────────────────────────────────
         async function loadObjects() {
             try {
@@ -1063,7 +1417,7 @@
                     label.textContent = obj.label || obj.id;
                     svgLayer.appendChild(label);
                 }
-                log(`✓ ${polygons.length} figura(s) cargada(s) en pantalla`, 'success');
+                log(`${polygons.length} figura(s) interactiva(s) sincronizada(s)`, 'success');
             } catch (e) {
                 log(`Error cargando figuras: ${e.message}`, 'error');
             }
@@ -1137,8 +1491,8 @@
                         polyEl.classList.add('active');
                         setTimeout(() => polyEl.classList.remove('active'), 250);
                     }
-                    log(`💥 CLIC en figura: ${hoveredObj.label || hoveredObj.id} → ${targetDeviceId}`, 'success');
-                    showToast(`¡Clic en ${hoveredObj.label || hoveredObj.id}!`);
+                    log(`Clic en figura: ${hoveredObj.label || hoveredObj.id} -> ${targetDeviceId}`, 'success');
+                    showToast(`Clic: ${hoveredObj.label || hoveredObj.id}`);
                 }
             } else {
                 if (currentHoveredId) {
@@ -1207,7 +1561,8 @@
                     const dev = (st.device || 'GPU').replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
                     gpuBadge.textContent = `${dev} (${Math.round(st.vram_mb)} MB)`;
                     guidedFilterActive = st.guided_filter;
-                    gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.2)' : '';
+                    gfToggleBtn.style.background = guidedFilterActive ? 'rgba(0, 255, 136, 0.16)' : '';
+                    gfToggleBtn.style.borderColor = guidedFilterActive ? 'var(--accent-green)' : '';
 
                     if (st.active_model && modelSelect.value !== st.active_model) {
                         for (let opt of modelSelect.options) {
@@ -1230,8 +1585,8 @@
             try {
                 await fetch('/api/calibrate', { method: 'POST' });
             } catch (e) {}
-            showToast('✓ Fondo Calibrado. Entra a escena');
-            log('📸 Fotograma de fondo capturado como referencia limpia.', 'success');
+            showToast('Fondo Calibrado. Entra a escena');
+            log('Fotograma de fondo capturado como referencia limpia.', 'success');
         }
 
         calibrateBtn.onclick = calibrateBackground;
@@ -1244,12 +1599,12 @@
                 body: JSON.stringify({ guided_filter: guidedFilterActive })
             });
             showToast(`Guided Filter: ${guidedFilterActive ? 'Activado' : 'Desactivado'}`);
-            log(`✨ Fast Guided Filter: ${guidedFilterActive ? 'Activado' : 'Desactivado'}`, 'info');
+            log(`Fast Guided Filter: ${guidedFilterActive ? 'Activado' : 'Desactivado'}`, 'info');
         };
 
         modelSelect.addEventListener('change', async () => {
             const selected = modelSelect.value;
-            log(`Cambiando motor a: ${selected}...`, 'info');
+            log(`Conmutando motor a: ${selected}...`, 'info');
             const msg = { type: 'mode_change', model: selected };
             primaryChannel.postMessage(msg);
             legacyChannel.postMessage(msg);
@@ -1265,7 +1620,7 @@
             if (res.ok) {
                 startCursorSSE();
                 showToast(`Motor CUDA Activo: ${selected}`);
-                log(`✓ Motor CUDA activo: ${selected}`, 'success');
+                log(`Motor CUDA activo: ${selected}`, 'success');
                 if (selected === 'background_subtraction') {
                     setTimeout(calibrateBackground, 250);
                 }
@@ -1295,7 +1650,7 @@
         // Iniciar en modo CUDA por defecto
         startCursorSSE();
         loadVideoFromDB();
-        log('Centro de Control Touchless Inicializado Correctamente.', 'success');
+        log('Centro de Control Touchless inicializado correctamente.', 'success');
     </script>
 </body>
 </html>
