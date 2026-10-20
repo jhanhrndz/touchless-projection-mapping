@@ -3,7 +3,7 @@
 > Sistema definitivo de proyección interactiva holográfica potenciado por visión artificial acelerada por hardware (CUDA), suite de 8 modelos de segmentación neuronal y automatización IoT física en tiempo real.
 
 <p align="center">
-  <img src="assets/touchless-projection-mapping.jpg" alt="Touchless Projection Mapping Cover" width="100%" />
+  <img src="docs/assets/touchless-projection-mapping.jpg" alt="Touchless Projection Mapping Cover" width="100%" />
 </p>
 
 ---
@@ -16,54 +16,57 @@ A través de una cámara web estándar y una GPU con aceleración CUDA, el siste
 
 ---
 
-## 🏛️ Arquitectura del Proyecto
+## 🏛️ Arquitectura del Proyecto (`src-layout`)
 
 ```text
 touchless-projection-mapping/
-├── vision_engine/                   ← MOTOR CENTRAL DE VISIÓN ARTIFICIAL (Python/CUDA)
-│   ├── engine.py                    (Bucle de visión, aislamiento orgánico y shaders GPU)
-│   ├── server.py                    (Servidor HTTP, streaming MJPEG, SSE y API REST)
-│   ├── config.py                    (Configuración centralizada y rutas relativas)
-│   ├── hand_tracker.py              (MediaPipe Hand Landmarker + Filtro One-Euro + Histéresis)
-│   ├── gpu_renderer.py              (Shader holográfico BGR cuDNN acelerado en GPU)
-│   ├── arm_selector.py              (Filtro anatómico estricto de extremidades)
-│   ├── models/                      (Pesos locales: FastSAM-s.pt, yolo11n-seg.pt, hand_landmarker.task)
-│   └── pipelines/
-│       ├── yolo_pipeline.py         (Pipelines para YOLO11-seg y FastSAM Point-Prompt)
-│       └── rvm_background.py        (Pipelines para Robust Video Matting y Resta de Fondo)
+├── config/                      ← CONFIGURACIÓN CENTRALIZADA Y ESCENAS
+│   ├── devices.yaml             (Mapeo de dispositivos IoT físicos)
+│   ├── devices.dev.yaml         (Modo desarrollo / simulación segura mock)
+│   ├── objects.json             (Polígonos y figuras interactivas proyectadas)
+│   └── examples/                (Escenas de ejemplo: lámpara, estantería)
 │
-├── frontend/                        ← INTERFACES DE USUARIO Y PROYECCIÓN
-│   ├── controller.html (index.html) (Panel táctico del operador: telemetría, 8 modelos, video)
-│   ├── projector.html (projection.html) (Ventana de pared: fondo negro puro/video, cero HUD)
-│   ├── server.py                    (Servidor HTTP local con integración a Vision Engine)
-│   ├── objects.json                 (Polígonos y figuras interactivas mapeadas en pared)
-│   ├── v3/                          (Prototipo histórico: MediaPipe Pose en navegador)
-│   └── v4/                          (Prototipo histórico: RVM ONNX en navegador)
+├── src/                         ← CÓDIGO FUENTE UNIFICADO (src-layout estándar)
+│   ├── backend/                 (FastAPI, WebSockets, control IoT y editor interactivo)
+│   │   ├── devices/             (Controladores: wifi_switch, kasa, http, udp, mock)
+│   │   ├── static/              (Editor visual de polígonos y estilos en navegador)
+│   │   ├── config.py & server.py (Núcleo del runtime del servidor)
+│   │   └── editor.py            (Lógica del editor de geometrías interactivas)
+│   │
+│   └── vision/                  (Motor neuronal acelerado por GPU / CUDA)
+│       ├── engine.py            (Bucle de visión, shaders GPU y telemetría)
+│       ├── server.py            (Servidor HTTP, streaming MJPEG y API REST)
+│       ├── hand_tracker.py      (MediaPipe Hand Landmarker + Filtro One-Euro)
+│       ├── gpu_renderer.py      (Shader holográfico BGR cuDNN acelerado en GPU)
+│       ├── models/              (Pesos locales: FastSAM-s, YOLO11, Hand Landmarker)
+│       └── pipelines/           (Pipelines para RVM, YOLO11-seg, FastSAM, Resta GPU)
 │
-├── backend/                         ← HUB DE HARDWARE E IOT (FastAPI / Docker)
-│   ├── src/                         (Servidor WebSocket hub y controladores de dispositivos)
-│   ├── data/                        (Configuración de dispositivos devices.yaml / mock)
-│   ├── docker/ & docker-compose.yml (Despliegue contenerizado en puerto 8080)
-│   └── README.md                    (Documentación de integración de hardware)
+├── frontend/                    ← INTERFACES DE USUARIO Y PROYECCIÓN
+│   ├── controller.html          (Panel del operador: visor de cámara, modelos, controles)
+│   └── projector.html           (Ventana de proyección en pared: negro puro, cero HUD)
 │
-├── tests/                           ← BANCO DE PRUEBAS AUTOMATIZADO
-│   ├── test_baseline.py             (Pruebas de importación, VideoFileSource y endpoints HTTP)
-│   ├── test_arm_selector.py         (Validación de aislamiento anatómico de brazos)
-│   ├── test_gpu_renderer.py         (Validación de shaders y Guided Filter)
-│   ├── test_hand_tracker.py         (Validación de OneEuroFilter y HysteresisPinchDetector)
-│   ├── test_rvm_background.py       (Validación de RVM y Resta de Fondo)
-│   └── test_yolo_pipeline.py        (Validación de YOLO11-seg y FastSAM)
+├── tests/                       ← BANCO DE PRUEBAS AUTOMATIZADO (580 tests)
+│   ├── backend/                 (Pruebas de servidor, dispositivos, editor y WebSocket)
+│   └── vision/                  (Pruebas de modelos IA, shaders GPU, tracking y matting)
 │
-├── tools/                           ← HERRAMIENTAS Y BENCHMARKING
-│   ├── benchmark.py                 (Medición aislada de latencia por etapas y FPS reales)
-│   ├── download_models.py           (Descarga automatizada y verificación de pesos neuronales)
-│   ├── generate_synthetic_clips.py  (Generador de secuencias de video de prueba sintéticas)
-│   └── record_clips.py              (Grabador interactivo de clips de prueba con cámara)
+├── scripts/                     ← HERRAMIENTAS Y SCRIPTS OPERATIVOS
+│   ├── benchmark.py             (Medición aislada de latencia y FPS reales)
+│   ├── download_models.py       (Descarga y verificación de pesos neuronales)
+│   ├── generate_synthetic_clips.py (Generador de secuencias de video sintéticas)
+│   ├── record_clips.py          (Grabador interactivo de clips de prueba)
+│   └── list_displays.py         (Enumerador multiplataforma de proyectores y pantallas)
 │
-├── iniciar_proyecto.bat             ← ARRANQUE CON UN DOBLE CLIC (Windows)
-├── setup.bat                        ← INSTALADOR AUTOMÁTICO DE ENTORNO Y CUDA
-├── requirements.txt                 ← Dependencias consolidadas del sistema
-├── requirements-dev.txt             ← Dependencias de testing y benchmarks
+├── docs/                        ← DOCUMENTACIÓN TÉCNICA Y ARQUITECTURA
+│   ├── assets/                  (Imágenes y diagramas de arquitectura)
+│   ├── ARCHITECTURE.md          (Especificación técnica del sistema)
+│   ├── AUDIT.md & CHANGELOG.md  (Auditorías y registro de cambios)
+│   └── SETUP_GUIDE.md           (Guía paso a paso de puesta en marcha)
+│
+├── docker/                      ← DESPLIEGUE CONTENERIZADO (Dockerfile y Compose)
+├── iniciar_proyecto.bat         ← ARRANQUE CON 1 CLIC (Windows: Backend + Visión)
+├── setup.bat                    ← INSTALADOR AUTOMÁTICO DE ENTORNO Y CUDA
+├── pyproject.toml               ← Configuración unificada de paquetes y pytest
+├── requirements.txt             ← Dependencias consolidadas del sistema
 └── README.md
 ```
 
@@ -122,15 +125,17 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # 2. Descargar pesos de los modelos (si es necesario)
-python tools/download_models.py
+python scripts/download_models.py
 
-# 3. Iniciar el motor de visión y servidor web (puerto 5051)
-python -m vision_engine
+# 3. Iniciar el backend de control IoT (puerto 8000)
+python -m backend --devices config/devices.dev.yaml --objects config/objects.json
+
+# 4. Iniciar el motor de visión y servidor web (puerto 5051)
+python -m vision
 ```
 
-*(Opcional) Si deseas controlar hardware real vía Docker:*
+*(Opcional) Si deseas controlar hardware vía Docker:*
 ```bash
-cd backend
 docker compose up -d
 ```
 
@@ -181,7 +186,7 @@ El sistema incluye integración nativa de video de fondo para enriquecer visualm
 pytest tests/ -v
 
 # Ejecutar benchmark de rendimiento por etapas en GPU
-python tools/benchmark.py --mode all --frames 60
+python scripts/benchmark.py --mode all --frames 60
 ```
 
 ---

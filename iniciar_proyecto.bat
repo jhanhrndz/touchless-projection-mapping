@@ -28,12 +28,12 @@ if exist .venv\Scripts\python.exe (
 :: Iniciar el Backend (Runtime en puerto 8000)
 echo [*] Levantando Servidor Backend (FastAPI / Dispositivos en puerto 8000)...
 set "PYTHONIOENCODING=utf-8"
-set "PYTHONPATH=backend\src"
-start /b "Backend-Runtime" %PYTHON_EXE% -m runtime --devices backend\data\devices.dev.yaml --objects frontend\objects.json --port 8000
+set "PYTHONPATH=src"
+start /b "Backend-Runtime" %PYTHON_EXE% -m backend --devices config\devices.dev.yaml --objects config\objects.json --port 8000
 
 :: Iniciar el Motor de Vision e Interaccion (Puerto 5051)
 echo [*] Iniciando Motor de Vision Neuronal (Puerto 5051)...
-%PYTHON_EXE% -m vision_engine %*
+%PYTHON_EXE% -m vision %*
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] El motor de vision se detuvo con un error.

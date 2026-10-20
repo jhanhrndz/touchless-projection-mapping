@@ -53,7 +53,7 @@ if exist requirements-dev.txt (
 
 echo.
 echo [5/5] Verificando modelos neuronales...
-.venv\Scripts\python.exe tools\download_models.py
+.venv\Scripts\python.exe scripts\download_models.py
 
 echo.
 echo ======================================================================

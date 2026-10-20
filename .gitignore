@@ -45,6 +45,7 @@ Thumbs.db
 *.bin
 *.pth
 torch_hub_cache/
+.cache/
 models/experiments/
 
 # Video clips for benchmarks and tests (generated locally)

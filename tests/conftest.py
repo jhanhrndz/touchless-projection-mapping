@@ -1,12 +1,34 @@
-"""Configuración global de pytest para la suite de pruebas de vision_engine."""
+"""Configuración global de pytest para touchless-projection-mapping."""
 
 import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-VISION_ENGINE_DIR = ROOT_DIR / "vision_engine"
-PIPELINES_DIR = VISION_ENGINE_DIR / "pipelines"
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-for p in [str(ROOT_DIR), str(VISION_ENGINE_DIR), str(PIPELINES_DIR)]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
+# src/ contains backend and vision, as well as runtime and vision_engine compatibility packages
+
+
+
+def pytest_collection_modifyitems(config, items):
+    import pytest
+
+    if config.getoption("--hardware", default=False):
+        return
+    skip_hardware = pytest.mark.skip(reason="needs --hardware to run (camera/device required)")
+    for item in items:
+        if "hardware" in item.keywords:
+            item.add_marker(skip_hardware)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--hardware",
+        action="store_true",
+        default=False,
+        help="run tests that require a real camera or physical device",
+    )
