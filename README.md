@@ -65,6 +65,7 @@ touchless-projection-mapping/
 │   ├── assets/                  (Imágenes y diagramas de arquitectura)
 │   ├── ARCHITECTURE.md          (Especificación técnica del sistema)
 │   ├── AUDIT.md & CHANGELOG.md  (Auditorías y registro de cambios)
+│   ├── ROADMAP.md               (Estado del proyecto, pasos a seguir y tareas pendientes)
 │   └── SETUP_GUIDE.md           (Guía paso a paso de puesta en marcha)
 │
 ├── run.py                       ← ORQUESTADOR NATIVO PROFESIONAL (Gestión de host y procesos)
@@ -230,6 +231,15 @@ pytest tests/vision/test_hand_tracker.py -v
 # Ejecutar benchmark de rendimiento por etapas en GPU
 python scripts/benchmark.py --mode all --frames 60
 ```
+
+---
+
+## 🗺️ Estado del Proyecto y Próximos Pasos
+
+El núcleo de visión artificial acelerada por CUDA, renderizado holográfico, editor de geometrías interactivas y orquestación de servicios se encuentra **100% implementado y probado**.
+
+Para conocer las extensiones planificadas, cómo conectar lámparas inteligentes físicas reales o el módulo de auto-homografía óptica, consulta la guía detallada:
+👉 **[ROADMAP.md](docs/ROADMAP.md)** — *Guía de Pasos a Seguir, Tareas Pendientes y Extensiones Futuras*.
 
 ---
 
