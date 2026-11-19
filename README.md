@@ -1,6 +1,6 @@
 # Touchless Projection Mapping 🖐️✨
 
-> Sistema definitivo de proyección interactiva holográfica potenciado por visión artificial acelerada por hardware (CUDA), suite de 8 modelos de segmentación neuronal y automatización IoT física en tiempo real.
+> Sistema profesional de proyección interactiva holográfica potenciado por visión artificial acelerada por hardware (NVIDIA CUDA), suite de 8 modelos de segmentación neuronal y automatización IoT física en tiempo real.
 
 <p align="center">
   <img src="docs/assets/touchless-projection-mapping.jpg" alt="Touchless Projection Mapping Cover" width="100%" />
@@ -12,7 +12,12 @@
 
 **Touchless Projection Mapping** transforma cualquier pared u objeto físico en una superficie interactiva de control sin necesidad de sensores vestibles, pantallas táctiles ni costosas cámaras de profundidad.
 
-A través de una cámara web estándar y una GPU con aceleración CUDA, el sistema rastrea las manos con **MediaPipe**, segmenta los brazos utilizando modelos fundacionales de vanguardia (**FastSAM**, **YOLO11-seg**, **Robust Video Matting** o algoritmos diferenciales), proyecta una silueta holográfica verde neón sobre fondos de video dinámicos con fusión aditiva (`mix-blend-mode: screen`), y activa dispositivos físicos reales (enchufes inteligentes Kasa, luces, actuadores) mediante **WebSockets**.
+A través de una cámara web estándar y una GPU con aceleración CUDA, el sistema:
+1. **Rastrea las manos** en tiempo real con **MediaPipe Hand Landmarker** y estabilización cinemática mediante filtro **One-Euro**.
+2. **Segmenta los brazos y el cuerpo** utilizando modelos fundacionales de vanguardia (**FastSAM**, **YOLO11-seg**, **Robust Video Matting** o algoritmos diferenciales).
+3. **Proyecta una silueta holográfica verde neón** sobre fondos de video dinámicos con fusión aditiva (`mix-blend-mode: screen`) y filtrado guiado en GPU (**Fast Guided Filter**).
+4. **Detecta gestos de clic táctil por pellizco (*pinch*)** con histeresis calibrada a 65 px y respuesta inmediata en 1 fotograma.
+5. **Activa dispositivos físicos reales** (enchufes inteligentes TP-Link Kasa / Tapo, luces, relés y actuadores) mediante **WebSockets** y un editor visual de polígonos interactivos.
 
 ---
 
@@ -21,31 +26,31 @@ A través de una cámara web estándar y una GPU con aceleración CUDA, el siste
 ```text
 touchless-projection-mapping/
 ├── config/                      ← CONFIGURACIÓN CENTRALIZADA Y ESCENAS
-│   ├── devices.yaml             (Mapeo de dispositivos IoT físicos)
-│   ├── devices.dev.yaml         (Modo desarrollo / simulación segura mock)
-│   ├── objects.json             (Polígonos y figuras interactivas proyectadas)
-│   └── examples/                (Escenas de ejemplo: lámpara, estantería)
+│   ├── devices.yaml             (Mapeo de dispositivos IoT físicos reales)
+│   ├── devices.dev.yaml         (Modo desarrollo / simulación mock segura)
+│   ├── objects.json             (Polígonos y geometrías interactivas proyectadas)
+│   └── examples/                (Escenas de ejemplo: lámpara, estantería, etc.)
 │
 ├── src/                         ← CÓDIGO FUENTE UNIFICADO (src-layout estándar)
-│   ├── backend/                 (FastAPI, WebSockets, control IoT y editor interactivo)
+│   ├── backend/                 (FastAPI, WebSockets, control IoT y editor de geometrías)
 │   │   ├── devices/             (Controladores: wifi_switch, kasa, http, udp, mock)
 │   │   ├── static/              (Editor visual de polígonos y estilos en navegador)
-│   │   ├── config.py & server.py (Núcleo del runtime del servidor)
-│   │   └── editor.py            (Lógica del editor de geometrías interactivas)
+│   │   ├── config.py & server.py (Núcleo y API REST del runtime de dispositivos)
+│   │   └── editor.py            (Lógica geométrica y serialización de objetos)
 │   │
 │   └── vision/                  (Motor neuronal acelerado por GPU / CUDA)
-│       ├── engine.py            (Bucle de visión, shaders GPU y telemetría)
+│       ├── engine.py            (Bucle de visión, shaders GPU, telemetría y gestos)
 │       ├── server.py            (Servidor HTTP, streaming MJPEG y API REST)
-│       ├── hand_tracker.py      (MediaPipe Hand Landmarker + Filtro One-Euro)
+│       ├── hand_tracker.py      (MediaPipe Hand Landmarker + Filtro One-Euro + Pinch)
 │       ├── gpu_renderer.py      (Shader holográfico BGR cuDNN acelerado en GPU)
 │       ├── models/              (Pesos locales: FastSAM-s, YOLO11, Hand Landmarker)
 │       └── pipelines/           (Pipelines para RVM, YOLO11-seg, FastSAM, Resta GPU)
 │
 ├── frontend/                    ← INTERFACES DE USUARIO Y PROYECCIÓN
-│   ├── controller.html          (Panel del operador: visor de cámara, modelos, controles)
+│   ├── controller.html          (Panel del operador: vista de cámara, selector de modelos)
 │   └── projector.html           (Ventana de proyección en pared: negro puro, cero HUD)
 │
-├── tests/                       ← BANCO DE PRUEBAS AUTOMATIZADO (580 tests)
+├── tests/                       ← BANCO DE PRUEBAS AUTOMATIZADO (581 tests unitarios)
 │   ├── backend/                 (Pruebas de servidor, dispositivos, editor y WebSocket)
 │   └── vision/                  (Pruebas de modelos IA, shaders GPU, tracking y matting)
 │
@@ -62,11 +67,12 @@ touchless-projection-mapping/
 │   ├── AUDIT.md & CHANGELOG.md  (Auditorías y registro de cambios)
 │   └── SETUP_GUIDE.md           (Guía paso a paso de puesta en marcha)
 │
-├── docker/                      ← DESPLIEGUE CONTENERIZADO (Dockerfile y Compose)
-├── iniciar_proyecto.bat         ← ARRANQUE CON 1 CLIC (Windows: Backend + Visión)
-├── setup.bat                    ← INSTALADOR AUTOMÁTICO DE ENTORNO Y CUDA
-├── pyproject.toml               ← Configuración unificada de paquetes y pytest
+├── run.py                       ← ORQUESTADOR NATIVO PROFESIONAL (Gestión de host y procesos)
+├── iniciar_proyecto.bat         ← ARRANQUE CON 1 CLIC (Lanzador para Windows)
+├── setup.bat                    ← INSTALADOR AUTOMÁTICO DE ENTORNO, CUDA Y MODELOS
+├── pyproject.toml               ← Configuración unificada del proyecto y pytest
 ├── requirements.txt             ← Dependencias consolidadas del sistema
+├── .env.example                 ← Plantilla de configuración de variables de entorno
 └── README.md
 ```
 
@@ -74,7 +80,7 @@ touchless-projection-mapping/
 
 ## 🎯 Suite de 8 Modelos de Segmentación
 
-El sistema permite alternar en caliente entre 8 métodos de segmentación para garantizar la máxima fluidez según el hardware disponible:
+El sistema permite alternar en caliente entre 8 métodos de segmentación para adaptarse al hardware y entorno disponible:
 
 | # | Modelo | Dispositivo | FPS | Latencia | Características Principales |
 | :-: | :--- | :---: | :---: | :---: | :--- |
@@ -94,65 +100,100 @@ El sistema permite alternar en caliente entre 8 métodos de segmentación para g
 ### Requisitos de Hardware
 - **Sistema Operativo:** Windows 10/11 (64-bit)
 - **Python:** Python 3.10, 3.11, 3.12 o 3.13 (64-bit)
-- **GPU (Recomendada):** NVIDIA GeForce (GTX 1650 Ti+, RTX 2060+, RTX 30/40 series o Quadro) con soporte CUDA. Si no dispone de GPU NVIDIA, arrancará en modo seguro por CPU.
-- **Periféricos:** Cámara web USB conectada y proyector HDMI (o pantalla secundaria).
+- **GPU (Recomendada):** NVIDIA GeForce (GTX 1650 Ti+, RTX 2060+, RTX 30/40 series o Quadro) con soporte CUDA. Si no dispone de GPU dedicada, arrancará automáticamente en modo CPU seguro.
+- **Periféricos:** Cámara web USB estándar (720p/1080p a 30 o 60 FPS) y proyector HDMI (o monitor secundario extendido).
 
 ---
 
-### Método 1: Instalación Automática (Recomendado en Windows)
+### Método 1: Instalación Rápida (Recomendado en Windows)
 
-1. **Configurar el entorno (Solo la primera vez):**
+1. **Configurar el entorno y descargar modelos (Solo la primera vez):**
    Haz doble clic en:
-   ```text
+   ```cmd
    setup.bat
    ```
-   *Crea el entorno virtual `.venv`, instala PyTorch con aceleración CUDA, descarga las dependencias y verifica la GPU.*
+   *Crea automáticamente el entorno virtual `.venv`, instala PyTorch con aceleración CUDA, instala todas las librerías de `requirements.txt`, descarga los modelos neuronales y verifica la GPU.*
 
-2. **Iniciar el Sistema:**
+2. **Iniciar el Sistema Completo:**
    Haz doble clic en:
-   ```text
+   ```cmd
    iniciar_proyecto.bat
    ```
+   *Ejecuta el orquestador profesional `run.py`, realiza autodiagnósticos de hardware y abre las interfaces web sincronizadas.*
 
 ---
 
-### Método 2: Inicio Manual por Consola
+### Método 2: Ejecución mediante Orquestador Python (`run.py`)
 
-```bash
-# 1. Crear entorno virtual e instalar dependencias
-python -m venv .venv
+El orquestador nativo [`run.py`](run.py) es el estándar profesional Pro-AV para controlar el ciclo de vida de los servicios con pre-flight checks y apagado limpio (*Graceful Shutdown*):
+
+```powershell
+# 1. Activar entorno virtual
 .venv\Scripts\activate
-pip install -r requirements.txt
 
-# 2. Descargar pesos de los modelos (si es necesario)
-python scripts/download_models.py
+# 2. Verificar estado del hardware y puertos sin arrancar
+python run.py --check-only
 
-# 3. Iniciar el backend de control IoT (puerto 8000)
-python -m backend --devices config/devices.dev.yaml --objects config/objects.json
+# 3. Iniciar el sistema completo en modo interactivo normal
+python run.py
 
-# 4. Iniciar el motor de visión y servidor web (puerto 5051)
-python -m vision
-```
-
-*(Opcional) Si deseas controlar hardware vía Docker:*
-```bash
-docker compose up -d
+# Opciones avanzadas de arranque:
+python run.py --model yolo11                # Iniciar con un modelo IA específico
+python run.py --source data/demo.mp4        # Modo offline usando un clip de video (sin cámara web)
+python run.py --no-browser                  # No abrir pestañas de navegador automáticamente
+python run.py --backend-port 8000 --vision-port 5051  # Personalizar puertos
 ```
 
 ---
 
-## 🖥️ Sistema de 2 Pantallas (Dual-Window)
+## ⚙️ Configuración y Variables de Entorno (`.env`)
 
-Una vez iniciado el servidor, abre tu navegador web:
+El sistema incluye una plantilla completa en [`.env.example`](.env.example). Para personalizar tu entorno local:
 
-1. **Pantalla 1 — Laptop del Operador:**
+1. **Crear tu archivo `.env`:**
+   ```powershell
+   # En Windows PowerShell:
+   Copy-Item .env.example .env
+
+   # En Bash:
+   cp .env.example .env
+   ```
+
+2. **Parámetros configurables:**
+
+| Variable | Por Defecto | Descripción |
+| :--- | :---: | :--- |
+| `APP_HOST` | `127.0.0.1` | Dirección IP de escucha del Backend IoT y Editor. |
+| `APP_PORT` | `8000` | Puerto HTTP/WebSocket del Backend. Editor en: `http://localhost:8000/editor`. |
+| `VISION_PORT` | `5051` | Puerto HTTP del Motor de Visión y vistas de proyección. |
+| `VISION_MODEL` | `rvm_mobilenet` | Modelo neuronal inicial (`rvm_mobilenet`, `yolo11`, `fastsam`, `bg_sub_gpu`). |
+| `VISION_ARM_ONLY` | `false` | `false`: silueta de cuerpo completo; `true`: solo mano/antebrazo. |
+| `VISION_PINCH_DOWN` | `65.0` | Umbral en píxeles para activar clic por pellizco. |
+| `VISION_PINCH_UP` | `85.0` | Umbral en píxeles para liberar el clic (histeresis anti-rebote). |
+| `VISION_PINCH_DEBOUNCE`| `1` | Fotogramas de confirmación (1 = respuesta táctil instantánea). |
+| `SMART_SWITCH_HOST` | `10.0.0.42` | IP local del enchufe o interruptor inteligente TP-Link Kasa. |
+| `KASA_USERNAME` | — | Correo de cuenta TP-Link (para dispositivos con protocolo KLAP). |
+| `KASA_PASSWORD` | — | Contraseña de cuenta TP-Link. |
+| `RUNTIME_PROJECTOR_SIZE`| `1920x1080` | Resolución nativa del proyector (Ancho x Alto en px). |
+
+---
+
+## 🖥️ Arquitectura de Pantallas y Vistas Web
+
+El sistema opera con **tres ventanas web coordinadas**:
+
+1. **Panel del Operador (Laptop / Monitor Principal):**
    - URL: **`http://localhost:5051/controller.html`**
-   - Vista en vivo de cámara, selector dinámico de los 8 modelos, telemetría de GPU, controles de video de fondo y calibración.
+   - Vista previa de cámara en tiempo real, selector de modelos IA, telemetría de FPS/latencia de GPU, controles de video de fondo y calibración de pared.
 
-2. **Pantalla 2 — Proyector en Pared:**
+2. **Pantalla Proyector (Pared de Proyección):**
    - URL: **`http://localhost:5051/projector.html`**
-   - Arrastra esta pestaña a la pantalla extendida del proyector y presiona **F11** (o tecla **F**) para pantalla completa.
-   - **Regla óptica estricta:** Muestra exclusivamente el brazo holográfico verde neón y el video de fondo si está cargado. Cero menús, cero botones y fondo negro puro `#000000` para proyección transparente sobre la pared física.
+   - Arrastra esta ventana a la pantalla extendida del proyector y presiona **F11** (o tecla **F**) para pantalla completa.
+   - **Regla óptica estricta:** Fondo negro puro `#000000` (100% transparente ante la luz del proyector), proyectando exclusivamente el holograma verde neón y los videos de mapeo sin ningún elemento de interfaz de usuario.
+
+3. **Editor de Polígonos y Hardware IoT:**
+   - URL: **`http://localhost:8000/editor`**
+   - Lienzo interactivo en resolución 1:1 con la pared. Permite dibujar polígonos sobre objetos físicos (lámparas, cuadros, interruptores) y vincularlos a dispositivos de hardware reales o simulados.
 
 ---
 
@@ -160,30 +201,26 @@ Una vez iniciado el servidor, abre tu navegador web:
 
 | Tecla | Acción |
 | :---: | :--- |
-| **`[Espacio]`** o **`[C]`** | **Calibrar fondo:** Captura la pared vacía como referencia limpia. |
-| **`[B]`** | **Alternar modelo:** Conmuta secuencialmente entre los 8 modelos de segmentación. |
-| **`[G]`** | **Fast Guided Filter:** Activa/desactiva el filtrado de bordes finos en GPU. |
-| **`[V]`** | **Video de fondo:** Pausa o reanuda el video de fondo proyectado. |
+| **`[Espacio]`** o **`[C]`** | **Calibrar fondo:** Captura la pared vacía como referencia limpia (Modelo 5). |
+| **`[B]`** | **Alternar modelo:** Conmuta secuencialmente entre los 8 modelos de IA/visión. |
+| **`[G]`** | **Fast Guided Filter:** Activa o desactiva el filtrado de bordes finos en GPU. |
+| **`[V]`** | **Video de fondo:** Pausa o reanuda el video de mapeo proyectado. |
 | **`[F]`** o **`[F11]`** | **Pantalla completa:** En la ventana de proyección. |
 | **`[P]`** | **Abrir proyector:** Abre la ventana secundaria de proyección. |
 | **`[Q]`** o **`[ESC]`** | **Detener:** Cierra el motor de visión y libera la memoria VRAM. |
 
 ---
 
-## 🎬 Video de Fondo Dinámico para Mapeo
+## 🧪 Pruebas Unitarias y Calidad de Código
 
-El sistema incluye integración nativa de video de fondo para enriquecer visualmente el mapping:
-- **Carga de Video:** Selecciona cualquier archivo `.mp4`, `.webm` u `.ogg` desde el controlador.
-- **Fusión Óptica `mix-blend-mode: screen`:** Los píxeles negros del brazo digital son 100% transparentes, proyectando el holograma nítido sobre el video en reproducción continua.
-- **Control de Brillo en Vivo:** Ajusta el deslizador de brillo (10% - 100%) para balancear el contraste con la iluminación ambiental de la sala.
+El proyecto cuenta con un banco integral de **581 pruebas automatizadas** que validan el backend FastAPI, los controladores de hardware, el motor de visión, los filtros cinemáticos y la detección de gestos:
 
----
-
-## 🧪 Pruebas Unitarias y Benchmarking
-
-```bash
-# Ejecutar suite completa de pruebas unitarias
+```powershell
+# Ejecutar la suite completa de pruebas
 pytest tests/ -v
+
+# Ejecutar únicamente las pruebas del motor de visión y gestos
+pytest tests/vision/test_hand_tracker.py -v
 
 # Ejecutar benchmark de rendimiento por etapas en GPU
 python scripts/benchmark.py --mode all --frames 60
@@ -191,13 +228,28 @@ python scripts/benchmark.py --mode all --frames 60
 
 ---
 
+## 📦 Integración en Repositorio Central (`Audacia`)
+
+Para integrar este proyecto como subcarpeta dentro del monorepo central de la organización:
+
+```text
+Audacia/
+├── proyecto1/
+├── proyecto2/
+└── touchless-projection-mapping/   ← Este módulo
+```
+
+Se recomienda utilizar **`git subtree` con `--squash`** desde una bifurcación (*Fork*), lo que permite incorporar la suite completa en su propia carpeta manteniendo una historia limpia y modular.
+
+---
+
 ## 🤝 Créditos y Reconocimientos
 
 - Módulos de automatización de hardware y hub WebSocket en `backend/` basados en [interactive-projection-mapping](https://github.com/buildwbrendan/interactive-projection-mapping) de **Brendan**.
-- Motor de visión unificado (`vision_engine/`), suite multimodelo (FastSAM, YOLO11, RVM), sincronización de doble ventana, fusión de video de fondo y shaders holográficos desarrollados por **Jhan Hernández**.
+- Motor de visión unificado (`src/vision/`), suite multimodelo (FastSAM, YOLO11, RVM), orquestador nativo `run.py`, calibración de gestos táctiles, sincronización de doble ventana, fusión de video de fondo y shaders holográficos desarrollados por **Jhan Hernández**.
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está distribuido bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE) para más información.
+Este proyecto está distribuido bajo la Licencia GPL-3.0 / MIT. Consulta el archivo [pyproject.toml](pyproject.toml) para más detalles.
