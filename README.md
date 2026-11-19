@@ -1,6 +1,6 @@
 # Touchless Projection Mapping 🖐️✨
 
-> Sistema profesional de proyección interactiva holográfica potenciado por visión artificial acelerada por hardware (NVIDIA CUDA), suite de 8 modelos de segmentación neuronal y automatización IoT física en tiempo real.
+> Sistema profesional de proyección interactiva holográfica potenciado por visión artificial acelerada por hardware (NVIDIA CUDA), suite de 4 motores de segmentación y automatización IoT física en tiempo real.
 
 <p align="center">
   <img src="docs/assets/touchless-projection-mapping.jpg" alt="Touchless Projection Mapping Cover" width="100%" />
@@ -14,7 +14,7 @@
 
 A través de una cámara web estándar y una GPU con aceleración CUDA, el sistema:
 1. **Rastrea las manos** en tiempo real con **MediaPipe Hand Landmarker** y estabilización cinemática mediante filtro **One-Euro**.
-2. **Segmenta los brazos y el cuerpo** utilizando modelos fundacionales de vanguardia (**FastSAM**, **YOLO11-seg**, **Robust Video Matting** o algoritmos diferenciales).
+2. **Segmenta la silueta del usuario** mediante una suite de 4 motores de vanguardia (**Robust Video Matting MobileNetV3/ResNet50**, **YOLO11-seg** o **Resta de Fondo Diferencial**).
 3. **Proyecta una silueta holográfica verde neón** sobre fondos de video dinámicos con fusión aditiva (`mix-blend-mode: screen`) y filtrado guiado en GPU (**Fast Guided Filter**).
 4. **Detecta gestos de clic táctil por pellizco (*pinch*)** con histeresis calibrada a 65 px y respuesta inmediata en 1 fotograma.
 5. **Activa dispositivos físicos reales** (enchufes inteligentes TP-Link Kasa / Tapo, luces, relés y actuadores) mediante **WebSockets** y un editor visual de polígonos interactivos.
@@ -78,29 +78,25 @@ touchless-projection-mapping/
 
 ---
 
-## 🎯 Suite de 8 Modelos de Segmentación
+## 🎯 Motores de Segmentación Disponibles
 
-El sistema permite alternar en caliente entre 8 métodos de segmentación para adaptarse al hardware y entorno disponible:
+El sistema permite alternar en caliente entre 4 métodos de segmentación según el hardware y las condiciones de iluminación:
 
-| # | Modelo | Dispositivo | FPS | Latencia | Características Principales |
+| # | Modo / Motor | Dispositivo | FPS Promedio | Latencia | Características Principales |
 | :-: | :--- | :---: | :---: | :---: | :--- |
-| **1** | **FastSAM Point-Prompt** | CUDA (FP16) | **33 FPS** | ~30 ms | **Modo Recomendado.** Extracción orgánica por punto anatómico, contornos finos sin cajas. |
-| **2** | **YOLO11-seg** | CUDA (FP16) | **37 FPS** | ~27 ms | Máxima velocidad pura con `retina_masks=True` y filtrado por instancia de mano. |
-| **3** | **RVM MobileNetV3** | CUDA | **34 FPS** | ~29 ms | Video matting temporal recurrente con memoria de bordes y preservación interdigital. |
-| **4** | **RVM ResNet50** | CUDA | **28 FPS** | ~35 ms | Máxima fidelidad en siluetas anatómicas y dedos finos. |
-| **5** | **Resta de Fondo GPU** | GPU / CPU | **34 FPS** | ~29 ms | Resta diferencial contra pared física calibrada con tecla `[Espacio]`. Cero parpadeo. |
-| **6** | **Resta de Fondo Web** | Navegador | **40 FPS** | ~25 ms | Fallback 100% en navegador con semillas anatómicas de MediaPipe. |
-| **7** | **MediaPipe Pose Web** | Navegador | **28 FPS** | ~35 ms | Fallback web independiente basado en pose anatómica (v3). |
-| **8** | **RVM ONNX Web** | Navegador | **22 FPS** | ~45 ms | Fallback web basado en ONNX Runtime WebAssembly (v4). |
+| **1** | **RVM MobileNetV3** | CUDA / CPU | **~34 FPS** | ~29 ms | **Modo Recomendado por defecto.** Matting recurrente con memoria temporal de bordes y preservación fina de dedos. |
+| **2** | **RVM ResNet50** | CUDA | **~28 FPS** | ~35 ms | **Máxima fidelidad anatómica.** Mayor precisión en contornos complejos a costa de mayor consumo de VRAM. |
+| **3** | **YOLO11-seg** | CUDA | **~37 FPS** | ~27 ms | **Máxima velocidad.** Segmentación por instancias corporales con `retina_masks=True`. |
+| **4** | **Resta de Fondo Dinámica** | GPU / CPU | **~35-40 FPS** | ~25 ms | **Ultraligero sin IA.** Resta diferencial contra pared física calibrable en vivo mediante la tecla `[Espacio]`. |
 
 ---
 
 ## 🚀 Instalación y Puesta en Marcha
 
-### Requisitos de Hardware
+### Requisitos de Hardware y Sistema
 - **Sistema Operativo:** Windows 10/11 (64-bit)
 - **Python:** Python 3.10, 3.11, 3.12 o 3.13 (64-bit)
-- **GPU (Recomendada):** NVIDIA GeForce (GTX 1650 Ti+, RTX 2060+, RTX 30/40 series o Quadro) con soporte CUDA. Si no dispone de GPU dedicada, arrancará automáticamente en modo CPU seguro.
+- **GPU (Recomendada):** NVIDIA GeForce (GTX 1650 Ti+, RTX 2060+, RTX 30/40 series o Quadro) con soporte CUDA. Si no se dispone de GPU dedicada, el sistema arrancará automáticamente en modo CPU seguro.
 - **Periféricos:** Cámara web USB estándar (720p/1080p a 30 o 60 FPS) y proyector HDMI (o monitor secundario extendido).
 
 ---
@@ -138,9 +134,9 @@ python run.py --check-only
 python run.py
 
 # Opciones avanzadas de arranque:
-python run.py --model yolo11                # Iniciar con un modelo IA específico
-python run.py --source data/demo.mp4        # Modo offline usando un clip de video (sin cámara web)
-python run.py --no-browser                  # No abrir pestañas de navegador automáticamente
+python run.py --model yolo                   # Iniciar con un modelo específico (rvm_mobilenet, rvm_resnet, yolo, background_subtraction)
+python run.py --source data/demo.mp4         # Modo offline usando un clip de video (sin cámara web)
+python run.py --no-browser                   # No abrir pestañas de navegador automáticamente
 python run.py --backend-port 8000 --vision-port 5051  # Personalizar puertos
 ```
 
@@ -166,7 +162,7 @@ El sistema incluye una plantilla completa en [`.env.example`](.env.example). Par
 | `APP_HOST` | `127.0.0.1` | Dirección IP de escucha del Backend IoT y Editor. |
 | `APP_PORT` | `8000` | Puerto HTTP/WebSocket del Backend. Editor en: `http://localhost:8000/editor`. |
 | `VISION_PORT` | `5051` | Puerto HTTP del Motor de Visión y vistas de proyección. |
-| `VISION_MODEL` | `rvm_mobilenet` | Modelo neuronal inicial (`rvm_mobilenet`, `yolo11`, `fastsam`, `bg_sub_gpu`). |
+| `VISION_MODEL` | `rvm_mobilenet` | Modelo inicial (`rvm_mobilenet`, `rvm_resnet`, `yolo`, `background_subtraction`). |
 | `VISION_ARM_ONLY` | `false` | `false`: silueta de cuerpo completo; `true`: solo mano/antebrazo. |
 | `VISION_PINCH_DOWN` | `65.0` | Umbral en píxeles para activar clic por pellizco. |
 | `VISION_PINCH_UP` | `85.0` | Umbral en píxeles para liberar el clic (histeresis anti-rebote). |
@@ -201,13 +197,22 @@ El sistema opera con **tres ventanas web coordinadas**:
 
 | Tecla | Acción |
 | :---: | :--- |
-| **`[Espacio]`** o **`[C]`** | **Calibrar fondo:** Captura la pared vacía como referencia limpia (Modelo 5). |
-| **`[B]`** | **Alternar modelo:** Conmuta secuencialmente entre los 8 modelos de IA/visión. |
+| **`[Espacio]`** o **`[C]`** | **Calibrar fondo:** Captura la pared vacía como referencia limpia (Modelo 4). |
+| **`[B]`** | **Alternar modelo:** Conmuta secuencialmente entre los 4 motores de visión. |
 | **`[G]`** | **Fast Guided Filter:** Activa o desactiva el filtrado de bordes finos en GPU. |
 | **`[V]`** | **Video de fondo:** Pausa o reanuda el video de mapeo proyectado. |
 | **`[F]`** o **`[F11]`** | **Pantalla completa:** En la ventana de proyección. |
 | **`[P]`** | **Abrir proyector:** Abre la ventana secundaria de proyección. |
 | **`[Q]`** o **`[ESC]`** | **Detener:** Cierra el motor de visión y libera la memoria VRAM. |
+
+---
+
+## 🎬 Video de Fondo Dinámico para Mapeo
+
+El sistema incluye integración nativa de video de fondo para enriquecer visualmente el mapping:
+- **Carga de Video:** Selecciona cualquier archivo `.mp4`, `.webm` u `.ogg` desde el controlador.
+- **Fusión Óptica `mix-blend-mode: screen`:** Los píxeles negros del brazo digital son 100% transparentes, proyectando el holograma nítido sobre el video en reproducción continua.
+- **Control de Brillo en Vivo:** Ajusta el deslizador de brillo (10% - 100%) para balancear el contraste con la iluminación ambiental de la sala.
 
 ---
 
@@ -228,25 +233,10 @@ python scripts/benchmark.py --mode all --frames 60
 
 ---
 
-## 📦 Integración en Repositorio Central (`Audacia`)
-
-Para integrar este proyecto como subcarpeta dentro del monorepo central de la organización:
-
-```text
-Audacia/
-├── proyecto1/
-├── proyecto2/
-└── touchless-projection-mapping/   ← Este módulo
-```
-
-Se recomienda utilizar **`git subtree` con `--squash`** desde una bifurcación (*Fork*), lo que permite incorporar la suite completa en su propia carpeta manteniendo una historia limpia y modular.
-
----
-
 ## 🤝 Créditos y Reconocimientos
 
 - Módulos de automatización de hardware y hub WebSocket en `backend/` basados en [interactive-projection-mapping](https://github.com/buildwbrendan/interactive-projection-mapping) de **Brendan**.
-- Motor de visión unificado (`src/vision/`), suite multimodelo (FastSAM, YOLO11, RVM), orquestador nativo `run.py`, calibración de gestos táctiles, sincronización de doble ventana, fusión de video de fondo y shaders holográficos desarrollados por **Jhan Hernández**.
+- Motor de visión unificado (`src/vision/`), suite multimodelo, orquestador nativo `run.py`, calibración de gestos táctiles, sincronización de doble ventana, fusión de video de fondo y shaders holográficos desarrollados por **Jhan Hernández**.
 
 ---
 
